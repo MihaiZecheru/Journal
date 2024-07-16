@@ -26,6 +26,7 @@ const Home = () => {
   const entryModalLabel = useRef<HTMLLabelElement>(null);
   const entryModalRatingInput = useRef<HTMLInputElement>(null);
   const entryModalTextArea = useRef<HTMLTextAreaElement>(null);
+  const hoursSleptInput = useRef<HTMLInputElement>(null);
 
   const [loading, setLoading] = useState<boolean>(true);
   const entries = useRef<Entry[]>([]);
@@ -98,14 +99,27 @@ const Home = () => {
     // Clear text area
     entryModalTextArea.current!.value = '';
 
+    // Clear hours slept input
+    hoursSleptInput.current!.value = '';
+
     // Hide delete button
     (entryModal.current!.querySelector('.btn-danger') as HTMLButtonElement).classList.add('visually-hidden');
 
     // Check if an entry already exists for the selected date
     const existingEntry: Entry | null = entries.current.find((entry: Entry) => entry.date === date.toISOString().split('T')[0]) || null;
     if (existingEntry) {
+      // Set textarea to existing entry
       entryModalTextArea.current!.value = existingEntry.journal_entry;
+
+      // Set slider to existing rating
       let existingRating = existingEntry.rating;
+
+      // Set input to existing hours slept
+      if (existingEntry.hours_slept) {
+        hoursSleptInput.current!.value = existingEntry.hours_slept.toString();
+      }
+      
+      // Set modal color
       entryModalRatingInput.current!.value = (existingRating === 11 ? 5 : existingRating).toString();
       setModalColor(existingRating);
 
@@ -135,6 +149,7 @@ const Home = () => {
     const startStr = entryModal.current!.getAttribute('data-startStr')!;
     const text = entryModalTextArea.current!.value.trim();
     let rating = parseInt(entryModalRatingInput.current!.value);
+    const hoursSlept = parseInt(hoursSleptInput.current!.value);
 
     // If no text, don't save
     if (!text.length) return;
@@ -149,7 +164,7 @@ const Home = () => {
       // Update the entry in the database
       const { error } = await supabase
         .from('Entries')
-        .update({ rating, journal_entry: text })
+        .update({ rating, journal_entry: text, hours_slept: hoursSlept })
         .eq('date', startStr)
         .eq('user_id', await GetUserID());
 
@@ -160,7 +175,7 @@ const Home = () => {
 
       // Add to entries
       const index = entries.current.findIndex((entry: Entry) => entry.date === startStr);
-      entries.current[index] = { user_id: await GetUserID(), date: startStr as TDateString, rating, journal_entry: text };
+      entries.current[index] = { user_id: await GetUserID(), date: startStr as TDateString, rating, journal_entry: text, hours_slept: hoursSlept };
 
       // Remove the existing event from the calendar
       const event = calendar.current!.getApi().getEvents().find((event: any) => event.startStr === startStr)!;
@@ -171,7 +186,7 @@ const Home = () => {
       // Add the entry to the database
       const { error } = await supabase
         .from('Entries')
-        .insert({ user_id: await GetUserID(), date: startStr, rating, journal_entry: text });
+        .insert({ user_id: await GetUserID(), date: startStr, rating, journal_entry: text, hours_slept: hoursSlept });
 
       if (error) {
         console.error(`Error inserting entry: ${error.message}`);
@@ -179,7 +194,7 @@ const Home = () => {
       }
 
       // Add to entries
-      entries.current.push({ user_id: await GetUserID(), date: startStr as TDateString, rating, journal_entry: text });
+      entries.current.push({ user_id: await GetUserID(), date: startStr as TDateString, rating, journal_entry: text, hours_slept: hoursSlept });
       
       // If today, add as foreground event
       if (new Date(startStr).toISOString().split('T')[0] === new Date().toISOString().split('T')[0]) {
@@ -265,7 +280,7 @@ const Home = () => {
         <div className="modal-dialog">
           <div className="modal-content">
             <div className="modal-header">
-              <h5 className="modal-title" id="entry-modal-label" ref={ entryModalTitle }>Modal title</h5>
+              <h5 className="modal-title" id="entry-modal-label" ref={ entryModalTitle }>Modal title (dynamically changed)</h5>
               <button type="button" className="btn-close" data-mdb-ripple-init data-mdb-dismiss="modal" aria-label="Close"></button>
             </div>
             <div className="modal-body">
@@ -273,7 +288,7 @@ const Home = () => {
                 <textarea className="form-control" id="textAreaExample" rows={ 4 } ref={ entryModalTextArea } onKeyDown={ entryModalInputKeyHandler }></textarea>
                 <label className="form-label" htmlFor="textAreaExample" ref={ entryModalLabel }></label>
               </div>
-              <div>
+              <div className="mb-2">
                 <label className="form-label d-flex align-items-center" htmlFor="customRange2">
                   <span className="me-2">Rate your day</span>
                   <i className="fas fa-xmark fa-lg pointer-cursor" onClick={
@@ -285,6 +300,16 @@ const Home = () => {
                 </label>
                 <div className="range" data-mdb-range-init>
                   <input type="range" className="form-range" min="1" max="10" id="customRange2" ref={ entryModalRatingInput } onChange={ onRatingRangeChange } onKeyDown={ entryModalInputKeyHandler } />
+                </div>
+              </div>
+              <div>
+                <span style={{ "color": "var(--mdb-form-control-label-color)" }}>Trackers</span>
+                <div className="form-outline mt-2" data-mdb-input-init>
+                  <input type="number" id="hours-slept-input" min="0" max="24" className="form-control" ref={ hoursSleptInput } onChange={ (e: any) => {
+                    if (e.target.value > 24) e.target.value = 24;
+                    if (e.target.value < 0) e.target.value = 0;
+                  }}/>
+                  <label className="form-label" htmlFor="hours-slept-input">Hours slept</label>
                 </div>
               </div>
             </div>
