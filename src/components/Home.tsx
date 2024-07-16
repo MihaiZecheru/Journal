@@ -106,8 +106,7 @@ const Home = () => {
     if (existingEntry) {
       entryModalTextArea.current!.value = existingEntry.journalEntry;
       let existingRating = existingEntry.rating;
-      if (existingRating === 11) existingRating = 5; // gray
-      entryModalRatingInput.current!.value = existingRating.toString();
+      entryModalRatingInput.current!.value = (existingRating === 11 ? 5 : existingRating).toString();
       setModalColor(existingRating);
 
       // Show delete button
