@@ -288,9 +288,9 @@ const Home = () => {
                 <textarea className="form-control" id="textAreaExample" rows={ 4 } ref={ entryModalTextArea } onKeyDown={ entryModalInputKeyHandler }></textarea>
                 <label className="form-label" htmlFor="textAreaExample" ref={ entryModalLabel }></label>
               </div>
-              <div className="mb-2">
+              <div>
                 <label className="form-label d-flex align-items-center" htmlFor="customRange2">
-                  <span className="me-2">Rate your day</span>
+                  <span className="me-2 no-highlight">Rate your day</span>
                   <i className="fas fa-xmark fa-lg pointer-cursor" onClick={
                     () => {
                       entryModalRatingInput.current!.value = '5';
@@ -303,7 +303,7 @@ const Home = () => {
                 </div>
               </div>
               <div>
-                <span style={{ "color": "var(--mdb-form-control-label-color)" }}>Trackers</span>
+                <span style={{ "color": "var(--mdb-form-control-label-color)" }} className="no-highlight">Trackers</span>
                 <div className="form-outline mt-2" data-mdb-input-init>
                   <input type="number" id="hours-slept-input" min="0" max="24" className="form-control" ref={ hoursSleptInput } onChange={ (e: any) => {
                     if (e.target.value > 24) e.target.value = 24;
