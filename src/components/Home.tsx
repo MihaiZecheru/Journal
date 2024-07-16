@@ -73,21 +73,33 @@ const Home = () => {
   }
 
   const handleDateSelect = (selectInfo: any) => {
-    // TODO: get existing content for editing
     const date = new Date(selectInfo.start);
     const weekday = weekdays[date.getDay()];
     const month = date.toLocaleString('default', { month: 'long' });
+
+    // rating colors
+    entryModalRatingInput.current!.value = '5';
+    setModalColor(11); // gray
+    
+    // Clear text area
+    entryModalTextArea.current!.value = '';
+
+    // Check if an entry already exists for the selected date
+    const existingEntry: Entry | null = entries.find((entry: Entry) => entry.date === date.toISOString().split('T')[0]) || null;
+    if (existingEntry) {
+      entryModalTextArea.current!.value = existingEntry.journalEntry;
+      let existingRating = existingEntry.rating;
+      if (existingRating === 11) existingRating = 5; // gray
+      entryModalRatingInput.current!.value = existingRating.toString();
+      setModalColor(existingRating);
+    }
 
     // Show modal popup
     entryModalTitle.current!.textContent = `${weekday}, ${month} ${date.getDate()}`;
     entryModalLabel.current!.textContent = date.getDate() === new Date().getDate() ? 'What happened today?' : (date.getDate() === new Date().getDate() - 1) ? `What happened yesterday?` : `What happened on ${weekday}?`;
     entryModal.current!.setAttribute('data-startStr', selectInfo.startStr);
-    
-    // rating colors
-    entryModalRatingInput.current!.value = '5';
-    setModalColor(11); // gray
-    
-    entryModalTextArea.current!.value = '';
+
+    // Show modal
     new Modal(entryModal.current).show();
   };
 
@@ -103,37 +115,63 @@ const Home = () => {
   const entryModalSave = async () => {
     const startStr = entryModal.current!.getAttribute('data-startStr')!;
     const text = entryModalTextArea.current!.value.trim();
-    const rating = parseInt(entryModalRatingInput.current!.value);
+    let rating = parseInt(entryModalRatingInput.current!.value);
 
+    // If no text, don't save
     if (!text.length) return;
 
-    const { error } = await supabase
-      .from('Entries')
-      .insert({ date: startStr, rating, journalEntry: text });
+    // If rating is gray, set to 11
+    if ((entryModal.current!.querySelector('.modal-header')! as HTMLElement).style.backgroundColor === "rgb(189, 189, 189)") rating = 11;
 
-    if (error) {
-      console.error(`Error inserting entry: ${error.message}`);
-      throw error;
-    }
+    // Check if an entry already exists for the selected date
+    // If it already exists, update instead of inserting
+    const existingEntry: Entry | null = entries.find((entry: Entry) => entry.date === startStr) || null;
+    if (existingEntry) {
+      const { error } = await supabase
+        .from('Entries')
+        .update({ rating, journalEntry: text })
+        .eq('date', startStr);
 
-    // If today, add as foreground event
-    if (new Date(startStr).toISOString().split('T')[0] === new Date().toISOString().split('T')[0]) {
-      calendar.current!.getApi().addEvent({
-        title: text,
-        start: startStr,
-        allDay: true,
-        display: 'foreground',
-        color: colors[rating - 1]
-      });
+      if (error) {
+        console.error(`Error updating entry: ${error.message}`);
+        throw error;
+      }
+
+      // Remove the existing event from the calendar
+      const event = calendar.current!.getApi().getEvents().find((event: any) => event.startStr === startStr)!;
+      event.setProp('title', text);
+      event.setProp('color', colors[rating - 1]);
+      event.setProp('display', new Date(startStr).toISOString().split('T')[0] === new Date().toISOString().split('T')[0] ? 'foreground' : 'background');
     } else {
-      // Otherwise, add as background event
-      calendar.current!.getApi().addEvent({
-        title: text,
-        start: startStr,
-        allDay: true,
-        display: 'background',
-        color: colors[rating - 1]
-      });
+      // Update the entry in the database
+      const { error } = await supabase
+        .from('Entries')
+        .insert({ date: startStr, rating, journalEntry: text });
+
+      if (error) {
+        console.error(`Error inserting entry: ${error.message}`);
+        throw error;
+      }
+      
+      // If today, add as foreground event
+      if (new Date(startStr).toISOString().split('T')[0] === new Date().toISOString().split('T')[0]) {
+        calendar.current!.getApi().addEvent({
+          title: text,
+          start: startStr,
+          allDay: true,
+          display: 'foreground',
+          color: colors[rating - 1]
+        });
+      } else {
+        // Otherwise, add as background event
+        calendar.current!.getApi().addEvent({
+          title: text,
+          start: startStr,
+          allDay: true,
+          display: 'background',
+          color: colors[rating - 1]
+        });
+      }
     }
   };
 
