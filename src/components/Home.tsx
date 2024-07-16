@@ -55,7 +55,7 @@ const Home = () => {
       data.forEach((entry: Entry) => {
         if (entry === today) return;
         calendar.current!.getApi().addEvent({
-          title: !document.body.classList.contains('mobile') ? entry.journalEntry : '',
+          title: !document.body.classList.contains('mobile') ? entry.journal_entry : '',
           start: entry.date,
           allDay: true,
           display: 'background',
@@ -65,7 +65,7 @@ const Home = () => {
       
       if (today) {
         calendar.current!.getApi().addEvent({
-          title: !document.body.classList.contains('mobile') ? today.journalEntry : '',
+          title: !document.body.classList.contains('mobile') ? today.journal_entry : '',
           start: today.date,
           allDay: true,
           display: 'foreground',
@@ -104,7 +104,7 @@ const Home = () => {
     // Check if an entry already exists for the selected date
     const existingEntry: Entry | null = entries.current.find((entry: Entry) => entry.date === date.toISOString().split('T')[0]) || null;
     if (existingEntry) {
-      entryModalTextArea.current!.value = existingEntry.journalEntry;
+      entryModalTextArea.current!.value = existingEntry.journal_entry;
       let existingRating = existingEntry.rating;
       entryModalRatingInput.current!.value = (existingRating === 11 ? 5 : existingRating).toString();
       setModalColor(existingRating);
@@ -149,7 +149,7 @@ const Home = () => {
       // Update the entry in the database
       const { error } = await supabase
         .from('Entries')
-        .update({ rating, journalEntry: text })
+        .update({ rating, journal_entry: text })
         .eq('date', startStr)
         .eq('user_id', await GetUserID());
 
@@ -160,7 +160,7 @@ const Home = () => {
 
       // Add to entries
       const index = entries.current.findIndex((entry: Entry) => entry.date === startStr);
-      entries.current[index] = { user_id: await GetUserID(), date: startStr as TDateString, rating, journalEntry: text };
+      entries.current[index] = { user_id: await GetUserID(), date: startStr as TDateString, rating, journal_entry: text };
 
       // Remove the existing event from the calendar
       const event = calendar.current!.getApi().getEvents().find((event: any) => event.startStr === startStr)!;
@@ -171,7 +171,7 @@ const Home = () => {
       // Add the entry to the database
       const { error } = await supabase
         .from('Entries')
-        .insert({ user_id: await GetUserID(), date: startStr, rating, journalEntry: text });
+        .insert({ user_id: await GetUserID(), date: startStr, rating, journal_entry: text });
 
       if (error) {
         console.error(`Error inserting entry: ${error.message}`);
@@ -179,7 +179,7 @@ const Home = () => {
       }
 
       // Add to entries
-      entries.current.push({ user_id: await GetUserID(), date: startStr as TDateString, rating, journalEntry: text });
+      entries.current.push({ user_id: await GetUserID(), date: startStr as TDateString, rating, journal_entry: text });
       
       // If today, add as foreground event
       if (new Date(startStr).toISOString().split('T')[0] === new Date().toISOString().split('T')[0]) {
