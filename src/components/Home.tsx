@@ -98,6 +98,9 @@ const Home = () => {
     // Clear text area
     entryModalTextArea.current!.value = '';
 
+    // Hide delete button
+    (entryModal.current!.querySelector('.btn-danger') as HTMLButtonElement).classList.add('visually-hidden');
+
     // Check if an entry already exists for the selected date
     const existingEntry: Entry | null = entries.current.find((entry: Entry) => entry.date === date.toISOString().split('T')[0]) || null;
     if (existingEntry) {
@@ -106,6 +109,9 @@ const Home = () => {
       if (existingRating === 11) existingRating = 5; // gray
       entryModalRatingInput.current!.value = existingRating.toString();
       setModalColor(existingRating);
+
+      // Show delete button
+      (entryModal.current!.querySelector('.btn-danger') as HTMLButtonElement).classList.remove('visually-hidden');
     }
 
     // Show modal popup
@@ -285,7 +291,7 @@ const Home = () => {
             </div>
             <div className="modal-footer">
               <button type="button" className="btn btn-secondary" data-mdb-ripple-init data-mdb-dismiss="modal">Close</button>
-              <button type="button" className="btn btn-danger" data-mdb-ripple-init onClick={ entryModalDelete }>Delete</button>
+              <button type="button" className="btn btn-danger visually-hidden" data-mdb-ripple-init onClick={ entryModalDelete }>Delete</button>
               <button type="button" className="btn btn-success" data-mdb-ripple-init data-mdb-dismiss="modal" onClick={ entryModalSave }>Save</button>
             </div>
           </div>
