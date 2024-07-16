@@ -27,6 +27,7 @@
   --rating-8: #99FF00;
   --rating-9: #66FF00;
   --rating-10: #33FF00;
+  --rating-empty: var(--mdb-light-gray);
 }
 
 .form-range {
@@ -51,5 +52,14 @@
 
 .fc-h-event {
   border: none!important;
+}
 
+.fc-daygrid-bg-harness {
+  color: black!important;
+  overflow: hidden!important;
+}
+
+#textAreaExample {
+  resize: none;
+  height: 50vh!important;
 }
