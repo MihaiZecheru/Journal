@@ -8,6 +8,7 @@ import Entry from '../database/Entry';
 import supabase from '../database/config/supabase';
 import Loading from './Loading';
 import { GetUserID } from '../database/GetUser';
+import TDateString from '../database/TDateString';
 
 function mobileCheck() {
   let check = false;
@@ -38,7 +39,7 @@ const Home = () => {
       const { data, error } = await supabase
         .from('Entries')
         .select()
-        .eq('userID', await GetUserID());
+        .eq('user_id', await GetUserID());
 
       if (error) {
         console.error(`Error fetching entries: ${error.message}`);
@@ -140,16 +141,21 @@ const Home = () => {
     // If it already exists, update instead of inserting
     const existingEntry: Entry | null = entries.current.find((entry: Entry) => entry.date === startStr) || null;
     if (existingEntry) {
+      // Update the entry in the database
       const { error } = await supabase
         .from('Entries')
         .update({ rating, journalEntry: text })
         .eq('date', startStr)
-        .eq('userID', await GetUserID());
+        .eq('user_id', await GetUserID());
 
       if (error) {
         console.error(`Error updating entry: ${error.message}`);
         throw error;
       }
+
+      // Add to entries
+      const index = entries.current.findIndex((entry: Entry) => entry.date === startStr);
+      entries.current[index] = { user_id: await GetUserID(), date: startStr as TDateString, rating, journalEntry: text };
 
       // Remove the existing event from the calendar
       const event = calendar.current!.getApi().getEvents().find((event: any) => event.startStr === startStr)!;
@@ -157,15 +163,18 @@ const Home = () => {
       event.setProp('color', colors[rating - 1]);
       event.setProp('display', new Date(startStr).toISOString().split('T')[0] === new Date().toISOString().split('T')[0] ? 'foreground' : 'background');
     } else {
-      // Update the entry in the database
+      // Add the entry to the database
       const { error } = await supabase
         .from('Entries')
-        .insert({ userID: await GetUserID(), date: startStr, rating, journalEntry: text });
+        .insert({ user_id: await GetUserID(), date: startStr, rating, journalEntry: text });
 
       if (error) {
         console.error(`Error inserting entry: ${error.message}`);
         throw error;
       }
+
+      // Add to entries
+      entries.current.push({ user_id: await GetUserID(), date: startStr as TDateString, rating, journalEntry: text });
       
       // If today, add as foreground event
       if (new Date(startStr).toISOString().split('T')[0] === new Date().toISOString().split('T')[0]) {
@@ -199,6 +208,33 @@ const Home = () => {
       (entryModal.current!.querySelector('button.btn-primary')! as HTMLButtonElement).click();
     }
   };
+
+  const entryModalDelete = async () => {
+    const startStr = entryModal.current!.getAttribute('data-startStr')!;
+    const existingEntry: Entry | null = entries.current.find((entry: Entry) => entry.date === startStr) || null;
+    if (!existingEntry) return;
+
+    const { error } = await supabase
+      .from('Entries')
+      .delete()
+      .eq('date', startStr)
+      .eq('user_id', await GetUserID());
+
+    if (error) {
+      console.error(`Error deleting entry: ${error.message}`);
+      throw error;
+    }
+
+    // Remove the existing event from the calendar
+    const event = calendar.current!.getApi().getEvents().find((event: any) => event.startStr === startStr)!;
+    event.remove();
+
+    // Remove from entries
+    entries.current = entries.current.filter((entry: Entry) => entry.date !== startStr);
+
+    // Close modal
+    (entryModal.current!.querySelector('button.btn-secondary') as HTMLButtonElement).click();
+  }
 
   return (
     <div className="home">
@@ -249,7 +285,8 @@ const Home = () => {
             </div>
             <div className="modal-footer">
               <button type="button" className="btn btn-secondary" data-mdb-ripple-init data-mdb-dismiss="modal">Close</button>
-              <button type="button" className="btn btn-primary" data-mdb-ripple-init data-mdb-dismiss="modal" onClick={ entryModalSave }>Save</button>
+              <button type="button" className="btn btn-danger" data-mdb-ripple-init onClick={ entryModalDelete }>Delete</button>
+              <button type="button" className="btn btn-success" data-mdb-ripple-init data-mdb-dismiss="modal" onClick={ entryModalSave }>Save</button>
             </div>
           </div>
         </div>
