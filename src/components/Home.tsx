@@ -7,6 +7,7 @@ import { Modal, Ripple, Input, Range, initMDB } from "mdb-ui-kit";
 import Entry from '../database/Entry';
 import supabase from '../database/config/supabase';
 import Loading from './Loading';
+import { GetUserID } from '../database/GetUser';
 
 function mobileCheck() {
   let check = false;
@@ -36,7 +37,8 @@ const Home = () => {
     (async () => {
       const { data, error } = await supabase
         .from('Entries')
-        .select();
+        .select()
+        .eq('userID', await GetUserID());
 
       if (error) {
         console.error(`Error fetching entries: ${error.message}`);
@@ -141,7 +143,8 @@ const Home = () => {
       const { error } = await supabase
         .from('Entries')
         .update({ rating, journalEntry: text })
-        .eq('date', startStr);
+        .eq('date', startStr)
+        .eq('userID', await GetUserID());
 
       if (error) {
         console.error(`Error updating entry: ${error.message}`);
@@ -157,7 +160,7 @@ const Home = () => {
       // Update the entry in the database
       const { error } = await supabase
         .from('Entries')
-        .insert({ date: startStr, rating, journalEntry: text });
+        .insert({ userID: await GetUserID(), date: startStr, rating, journalEntry: text });
 
       if (error) {
         console.error(`Error inserting entry: ${error.message}`);
