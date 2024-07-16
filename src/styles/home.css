@@ -63,3 +63,17 @@
   resize: none;
   height: 50vh!important;
 }
+
+.loading-cover {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: var(--fc-button-bg-color);
+  color: white;
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}

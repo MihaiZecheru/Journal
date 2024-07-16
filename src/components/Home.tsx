@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Modal, Ripple, Input, Range, initMDB } from "mdb-ui-kit";
 import Entry from '../database/Entry';
 import supabase from '../database/config/supabase';
+import Loading from './Loading';
 
 function mobileCheck() {
   let check = false;
@@ -24,11 +25,12 @@ const Home = () => {
   const entryModalRatingInput = useRef<HTMLInputElement>(null);
   const entryModalTextArea = useRef<HTMLTextAreaElement>(null);
 
-  const [loading, setLoading] = useState<boolean>(true); // TODO: implement loading spinner
+  const [loading, setLoading] = useState<boolean>(true);
   const entries = useRef<Entry[]>([]);
 
   useEffect(() => {
     initMDB({ Modal, Ripple, Input, Range });
+    const timeStamp = Date.now();
     if (mobileCheck()) document.body.classList.add('mobile');
 
     (async () => {
@@ -68,6 +70,8 @@ const Home = () => {
         });
       }
       
+      // If a 1.5 seconds haven't passed, wait until they have
+      while (Date.now() - timeStamp < 1500) continue;
       setLoading(false);
     })();
   }, []);
@@ -195,6 +199,7 @@ const Home = () => {
 
   return (
     <div className="home">
+      { loading && <Loading /> }
       <FullCalendar
         headerToolbar={{
           left: 'prevYear,prev,next,nextYear',
