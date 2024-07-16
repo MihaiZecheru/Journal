@@ -1,0 +1,55 @@
+.fc-day-today {
+  background-color: var(--fc-button-bg-color)!important;
+}
+
+.fc-day-today .fc-daygrid-day-number {
+  color: white!important;
+}
+
+.home {
+  width: 100%;
+  height: 100%;
+}
+
+.fc {
+  max-width: 100vw;
+  max-height: 100vh;
+}
+
+:root {
+  --rating-1: #FF0000;
+  --rating-2: #FF3300;
+  --rating-3: #FF6600;
+  --rating-4: #FF9900;
+  --rating-5: #FFCC00;
+  --rating-6: #FFFF00;
+  --rating-7: #CCFF00;
+  --rating-8: #99FF00;
+  --rating-9: #66FF00;
+  --rating-10: #33FF00;
+}
+
+.form-range {
+  --current-rating-color: var(--rating-5);
+}
+
+.form-range::-webkit-slider-thumb {
+  background-color: var(--current-rating-color)!important;
+}
+
+.range .thumb::after {
+  background-color: var(--current-rating-color)!important;
+}
+
+.thumb-value {
+  color: var(--mdb-heading-color)!important;
+}
+
+.pointer-cursor {
+  cursor: pointer;
+}
+
+.fc-h-event {
+  border: none!important;
+
+}
