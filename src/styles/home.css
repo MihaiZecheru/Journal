@@ -113,3 +113,37 @@ label[for="customRange2"] {
 .mt-half {
   margin-top: .125rem;
 }
+
+.checkbox-custom-tracker-icon {
+  cursor: pointer;
+}
+
+.checkbox-custom-tracker-icon:hover {
+  font-size: 1.5rem;
+}
+
+.icons-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(75px, 1fr));
+  gap: 1rem;
+  row-gap: 3rem;
+  overflow-y: auto;
+  height: 60vh;
+}
+
+.icons-grid i {
+  cursor: pointer;
+  text-align: center;
+  font-size: 1rem;
+  transition: font-size 0.3s;
+}
+
+.icons-grid i:hover,
+.icons-grid i.selected {
+  font-size: 2rem;
+}
+
+.checkbox-custom-tracker-icon,
+.active-custom-tracker-color {
+  color: var(--mdb-primary);
+}

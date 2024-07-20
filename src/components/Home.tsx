@@ -10,6 +10,7 @@ import Loading from './Loading';
 import { GetUserID } from '../database/GetUser';
 import TDateString from '../database/TDateString';
 import CustomTracker, { TCustomTrackerTypeField } from '../database/CustomTracker';
+import icons from '../icons';
 
 function mobileCheck() {
   let check = false;
@@ -90,6 +91,7 @@ const Home = () => {
   const addCustomTrackerTypeLabel = useRef<HTMLLabelElement>(null);
   const addCustomTrackerType = useRef<HTMLInputElement>(null);
   const addCustomTrackerName = useRef<HTMLInputElement>(null);
+  const setCustomTrackerIconModal = useRef<HTMLDivElement>(null);
 
   const [loading, setLoading] = useState<boolean>(true);
   const entries = useRef<Entry[]>([]);
@@ -175,6 +177,9 @@ const Home = () => {
       new Input(input);
     });
 
+    // Clear custom tracker icon colors
+    document.querySelectorAll('.custom-tracker-input-icon').forEach((icon: Element) => icon.classList.remove('active-custom-tracker-color'));
+
     // rating colors
     entryModalRatingInput.current!.value = '5';
     setModalColor(11); // gray
@@ -214,8 +219,13 @@ const Home = () => {
         Object.keys(existingEntry.custom_trackers).forEach((key: string) => {
           const value = existingEntry.custom_trackers![key];
           const input = document.querySelector(`.custom-tracker-input[data-tracker-name="${key}"] input`) as HTMLInputElement;
-          if (input.type === 'checkbox') input.checked = value as boolean;
-          else input.value = value as string;
+          if (input.type === 'checkbox') {
+            input.checked = value as boolean;
+            const i = input.parentElement?.parentElement?.querySelector('i') as HTMLElement;
+            if (input.checked) i.classList.add('active-custom-tracker-color');
+          } else {
+            input.value = value as string;
+          }
         });
       }
     }
@@ -384,7 +394,8 @@ const Home = () => {
     // Close modal
     (addCustomTrackerModal.current!.querySelector('button.btn-secondary') as HTMLButtonElement).click();
 
-    const newTracker: CustomTracker = { user_id: await GetUserID(), name: name[0].toUpperCase() + name.substring(1), type };
+    // Object to insert into the customTrackers state hook
+    const newTracker: CustomTracker = { user_id: await GetUserID(), name: name[0].toUpperCase() + name.substring(1), type, icon_classname: 'fas fa-circle' };
     
     // Check to see if a tracker with this name already exists
     if (customTrackers.find((tracker: CustomTracker) => tracker.name === name)) {
@@ -407,8 +418,10 @@ const Home = () => {
     const event = arg.event;
     const hours_slept = event.extendedProps?.hours_slept || '';
     const custom_trackers = event.extendedProps?.custom_trackers as Record<string, string | boolean>;
+    
     // Are there any checkbox custom trackers that are checked?
     const checked_checkbox_custom_trackers_exist = custom_trackers && Object.values(custom_trackers).some((value: string | boolean) => value === true);
+
     return (
       <div>
         <div className="d-flex align-items-center me-1">
@@ -426,7 +439,9 @@ const Home = () => {
               const value = custom_trackers[key];
               const type = value === true || value === false ? 'checkbox' : 'text';
               if (type !== 'checkbox' || value === false) return;
-              const trackerIcon = <i className="fas fa-lg fa-tree"></i>;
+              if (!customTrackers.length) return; // TODO: custom trackers not loaded yet
+              const icon_classname = customTrackers.find((tracker: CustomTracker) => tracker.name === key)!.icon_classname;
+              const trackerIcon = <i className={ "fa-lg " + icon_classname }></i>;
               return <div className="calendar-event-custom-tracker ms-1 mt-1" key={ key }>{ trackerIcon }</div>
             })
           }
@@ -436,6 +451,21 @@ const Home = () => {
         }
       </div>
     );
+  };
+
+  const saveCustomTrackerIcon = async (custom_tracker_name: string, icon_classname: string) => {
+    const { error } = await supabase
+      .from('CustomTrackers')
+      .update({ icon_classname })
+      .eq('user_id', await GetUserID())
+      .eq('name', custom_tracker_name);
+
+    if (error) {
+      console.error(`Error updating custom tracker icon: ${error.message}`);
+      throw error;
+    }
+
+    setCustomTrackers(sort_custom_trackers(customTrackers.map((tracker: CustomTracker) => tracker.name === custom_tracker_name ? { ...tracker, icon_classname } : tracker)));
   };
 
   return (
@@ -493,7 +523,6 @@ const Home = () => {
                     if (e.target.value < 0) e.target.value = 0;
                     if (e.target.value == 0) e.target.value = '';
                     const isFloat = parseFloat(e.target.value) !== parseInt(e.target.value);
-                    console.log(isFloat, parseFloat(e.target.value) - parseInt(e.target.value) === 0.5);
                     if (isFloat && parseFloat(e.target.value) - parseInt(e.target.value) !== 0.5) e.target.value = parseInt(e.target.value) + 0.5;
                   }}/>
                   <label className="form-label" htmlFor="hours-slept-input">Hours slept</label>
@@ -501,11 +530,14 @@ const Home = () => {
                 { customTrackers && customTrackers.map((tracker: CustomTracker, index: number) => {
                     const id = tracker.name.replaceAll(' ', '-') + '-' + index.toString() + '-calendar-input';
                     return tracker.type === 'checkbox'
-                      ? <div className="form-check form-switch mb-2 mt-2 custom-tracker-input" data-mdb-input-init key={ id } data-tracker-name={ tracker.name }>
-                          <input className="form-check-input shadow-5" type="checkbox" id={ id } />
-                          <label className="form-check-label me-2 no-highlight" htmlFor={ id }>{ tracker.name }</label>
+                      ? <div className="d-flex align-items-center" key={ id }>
+                          <i className={ "custom-tracker-input-icon fa-lg me-2 " + tracker.icon_classname }></i>
+                          <div className="form-check form-switch mb-2 mt-2 custom-tracker-input" data-mdb-input-init data-tracker-name={ tracker.name }>
+                            <input className="form-check-input" type="checkbox" id={ id } onChange={ (e) => e.target.parentElement?.parentElement!.querySelector('i')!.classList.toggle('active-custom-tracker-color') } />
+                            <label className="form-check-label me-2 no-highlight" htmlFor={ id }>{ tracker.name }</label>
+                          </div>
                         </div>
-                      : <div className="form-outline me-2 mt-2 custom-tracker-input" data-mdb-input-init key={ id } data-tracker-name={ tracker.name }>
+                      : <div className="form-outline me-2 mt-2 custom-tracker-input" data-mdb-input-init key={ id } data-tracker-name={ tracker.name } >
                           <input type="text" id={ id } className="form-control" />
                           <label className="form-label" htmlFor={ id }>{ tracker.name }</label>
                         </div>
@@ -538,8 +570,15 @@ const Home = () => {
                     <div className="d-flex">
                       <h5>#{ index + 1 }</h5>
                       <div className="vr ms-2 me-2"></div>
+                      <div className="d-flex align-items-center justify-content-center">
+                        <i className={ "fa-lg mb-2 me-2 checkbox-custom-tracker-icon " + tracker.icon_classname } data-tracker-name={ tracker.name } onClick={ () => {
+                          new Input(document.getElementById('icon-search')!.parentElement!);
+                          setCustomTrackerIconModal.current!.setAttribute('data-tracker-name', tracker.name);
+                          new Modal(setCustomTrackerIconModal.current!).show();
+                        }}></i>
+                      </div>
                       <div className="form-check form-switch mb-2 custom-tracker-input" data-mdb-input-init key={ id }>
-                        <input className="form-check-input shadow-5" type="checkbox" id={ id } />
+                        <input className="form-check-input" type="checkbox" id={ id } />
                         <label className="form-check-label me-2 no-highlight" htmlFor={ id }>{ tracker.name }</label>
                       </div>
                     </div>
@@ -595,7 +634,65 @@ const Home = () => {
             </div>
             <div className="modal-footer">
               <button type="button" className="btn btn-secondary" data-mdb-ripple-init data-mdb-dismiss="modal">Close</button>
-              <button type="button" className="btn btn-primary" data-mdb-ripple-init onClick={ () => createNewCustomTracker(addCustomTrackerName.current!.value.trim(), addCustomTrackerType.current!.checked ? 'checkbox' : 'text') }>Add Tracker</button>
+              <button type="button" className="btn btn-primary" data-mdb-ripple-init onClick={ () => {
+                const icon = document.querySelector('.icons-grid i.selected');
+                if (!icon) return alert('You must select an icon before saving');
+                icon?.classList.remove('selected');
+                createNewCustomTracker(
+                  addCustomTrackerName.current!.value.trim(),
+                  addCustomTrackerType.current!.checked ? 'checkbox' : 'text'
+                );
+              }}>Add Tracker</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal fade" id="add-custom-tracker-icon-modal" tabIndex={ -1 } aria-labelledby="add-custom-tracker-icon-modal-label" aria-hidden="true" ref={ setCustomTrackerIconModal }>
+        <div className="modal-dialog">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h5 className="modal-title" id="add-custom-tracker-icon-modal-label">Select Custom Tracker Icon</h5>
+              <button type="button" className="btn-close" data-mdb-ripple-init data-mdb-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div className="modal-body">
+              <div className="d-flex align-items-center">
+                <div className="form-outline w-75" data-mdb-input-init>
+                  <i className="fas fa-magnifying-glass trailing"></i>
+                  <input type="text" id="icon-search" className="form-control form-icon-trailing" />
+                  <label className="form-label" htmlFor="icon-search">Search</label>
+                </div>
+              </div>
+              <div className="icons-grid pt-4">
+                {
+                  icons.map((icon: string) => {
+                    const iconSlot = document.getElementById('save-btn-icon-slot') as HTMLDivElement;
+                    return (
+                      <i className={ "fa-lg mb-2 me-2 " + icon } data-icon-class-string={ icon } key={ icon } onClick={ (e) => {
+                        document.querySelectorAll('.icons-grid i.selected').forEach((icon: Element) => icon.classList.remove('selected'));
+                        (e.target as HTMLElement).classList.add('selected');
+                        iconSlot.innerHTML = `<i class="${ 'fa-lg ' + icon }"></i>`;
+                      }}></i>
+                    );
+                  })
+                }
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-secondary" id="icon" data-mdb-ripple-init data-mdb-dismiss="modal">Close</button>
+              <button
+                type="button"
+                className="btn btn-primary d-flex justify-content-center align-items-center"
+                data-mdb-ripple-init
+                onClick={() => {
+                  (document.querySelector('#add-custom-tracker-icon-modal .btn-secondary') as HTMLButtonElement).click();
+                  const tracker_name = setCustomTrackerIconModal.current!.getAttribute('data-tracker-name')!;
+                  const icon_class_string = document.querySelector('.icons-grid i.selected')!.getAttribute('data-icon-class-string')!;
+                  saveCustomTrackerIcon(tracker_name, icon_class_string) ;
+                }}>
+                <span>Save Icon</span>
+                <div id="save-btn-icon-slot" className="ms-2"></div>
+              </button>
             </div>
           </div>
         </div>
