@@ -33,6 +33,42 @@ function sort_custom_trackers(trackers: CustomTracker[]): CustomTracker[] {
   return trackers.sort((a: CustomTracker, b: CustomTracker) => a.type === b.type ? 0 : a.type === 'text' ? -1 : 1);
 }
 
+function loadCalendar(entries: Entry[], calendarAPI: any) {
+    calendarAPI.removeAllEvents();
+
+    // All entries except for today's will be background events, making the whole square in the calendar the color of the rating
+    // The entry for today will remain navy blue so that it stands out. It will be a foreground event, meaning the event will be a small rectangle within the box
+    const today = entries.find((entry: Entry) => entry.date === GetTodaysDate());
+    entries.forEach((entry: Entry) => {
+      if (entry === today) return;
+      calendarAPI.addEvent({
+        title: entry.journal_entry,
+        start: entry.date,
+        allDay: true,
+        display: 'background',
+        color: colors[entry.rating - 1],
+        extendedProps: {
+          hours_slept: entry.hours_slept,
+          custom_trackers: entry.custom_trackers
+        }
+      });
+    });
+    
+    if (today) {
+      calendarAPI.addEvent({
+        title: today.journal_entry,
+        start: today.date,
+        allDay: true,
+        display: 'foreground',
+        color: colors[today.rating - 1],
+        extendedProps: {
+          hours_slept: today.hours_slept,
+          custom_trackers: today.custom_trackers
+        }
+      });
+    }
+}
+
 const Home = () => {
   const calendar = useRef<FullCalendar>(null);
 
@@ -75,31 +111,7 @@ const Home = () => {
       }
 
       entries.current = data as Entry[];
-      calendar.current!.getApi().removeAllEvents();
-
-      // All entries except for today's will be background events, making the whole square in the calendar the color of the rating
-      // The entry for today will remain navy blue so that it stands out. It will be a foreground event, meaning the event will be a small rectangle within the box
-      const today = data.find((entry: Entry) => entry.date === GetTodaysDate());
-      data.forEach((entry: Entry) => {
-        if (entry === today) return;
-        calendar.current!.getApi().addEvent({
-          title: !document.body.classList.contains('mobile') ? entry.journal_entry : '',
-          start: entry.date,
-          allDay: true,
-          display: 'background',
-          color: colors[entry.rating - 1]
-        });
-      });
-      
-      if (today) {
-        calendar.current!.getApi().addEvent({
-          title: !document.body.classList.contains('mobile') ? today.journal_entry : '',
-          start: today.date,
-          allDay: true,
-          display: 'foreground',
-          color: colors[today.rating - 1]
-        });
-      }
+      loadCalendar(data as Entry[], calendar.current!.getApi());
 
       const { data: data1, error: error1 } = await supabase
         .from('CustomTrackers')
@@ -139,9 +151,21 @@ const Home = () => {
   }
 
   const handleDateSelect = (selectInfo: any) => {
-    const date = new Date(selectInfo.start);
+    const date = new Date(new Date(selectInfo.start).toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
     const weekday = weekdays[date.getDay()];
     const month = date.toLocaleString('default', { month: 'long' });
+    const isMoreThanSixDaysAgo = (new Date().getTime() - date.getTime()) / (1000 * 60 * 60 * 24) > 7;
+
+    // TODO: Make custom viewing modal
+    if (isMoreThanSixDaysAgo) {
+      // Hide the save button and prevent the user from modifying any of the inputs
+      entryModal.current!.querySelector('.save-button')!.classList.add('visually-hidden');
+      entryModal.current!.querySelectorAll('input, textarea').forEach((input: Element) => (input as HTMLInputElement).disabled = true);
+    } else {
+      // Enable the save button and allow the user to modify the inputs
+      entryModal.current!.querySelector('.save-button')!.classList.remove('visually-hidden');
+      entryModal.current!.querySelectorAll('input, textarea').forEach((input: Element) => (input as HTMLInputElement).disabled = false);
+    }
 
     // Activate custom tracker inputs and clear input
     document.querySelectorAll('.custom-tracker-input').forEach((input: Element) => {
@@ -184,6 +208,16 @@ const Home = () => {
 
       // Show delete button
       (entryModal.current!.querySelector('.btn-danger') as HTMLButtonElement).classList.remove('visually-hidden');
+
+      // Set custom trackers
+      if (existingEntry.custom_trackers) {
+        Object.keys(existingEntry.custom_trackers).forEach((key: string) => {
+          const value = existingEntry.custom_trackers![key];
+          const input = document.querySelector(`.custom-tracker-input[data-tracker-name="${key}"] input`) as HTMLInputElement;
+          if (input.type === 'checkbox') input.checked = value as boolean;
+          else input.value = value as string;
+        });
+      }
     }
 
     // Show modal popup
@@ -196,19 +230,15 @@ const Home = () => {
   };
 
   const handleSelectAllow = (selectInfo: any) => {
-    const day = new Date(selectInfo.start);
-    return 1 &&
-      // Prevent the selection of multiple days at once
-      (new Date(selectInfo.startStr).getDate() === new Date(selectInfo.endStr).getDate() - 1)
-      // Don't allow if the day is in the future or is more than 5 days ago in the past, not including 'today'
-      && (day <= new Date() && day >= new Date(new Date().setDate(new Date().getDate() - 6)));
+    // Prevent the selection of multiple days at once
+    return (new Date(selectInfo.startStr).getDate() === new Date(selectInfo.endStr).getDate() - 1)
   };
 
   const entryModalSave = async () => {
     const startStr = entryModal.current!.getAttribute('data-startStr')!;
     const text = entryModalTextArea.current!.value.trim();
     let rating = parseInt(entryModalRatingInput.current!.value);
-    const hoursSlept = parseInt(hoursSleptInput.current!.value);
+    const hoursSlept = parseFloat(hoursSleptInput.current!.value);
 
     // Get custom trackers
     const customTrackers: { [key: string]: string | boolean } = {};
@@ -242,13 +272,15 @@ const Home = () => {
 
       // Add to entries
       const index = entries.current.findIndex((entry: Entry) => entry.date === startStr);
-      entries.current[index] = { user_id: await GetUserID(), date: startStr as TDateString, rating, journal_entry: text, hours_slept: hoursSlept };
+      entries.current[index] = { user_id: await GetUserID(), date: startStr as TDateString, rating, journal_entry: text, hours_slept: hoursSlept, custom_trackers: customTrackers };
 
       // Remove the existing event from the calendar
       const event = calendar.current!.getApi().getEvents().find((event: any) => event.startStr === startStr)!;
       event.setProp('title', text);
       event.setProp('color', colors[rating - 1]);
       event.setProp('display', startStr === GetTodaysDate() ? 'foreground' : 'background');
+      event.setExtendedProp('hours_slept', hoursSlept);
+      event.setExtendedProp('custom_trackers', customTrackers);
     } else {
       // Add the entry to the database
       const { error } = await supabase
@@ -266,20 +298,28 @@ const Home = () => {
       // If today, add as foreground event
       if (startStr === GetTodaysDate()) {
         calendar.current!.getApi().addEvent({
-          title: !document.body.classList.contains('mobile') ? text : '',
+          title: text,
           start: startStr,
           allDay: true,
           display: 'foreground',
-          color: colors[rating - 1]
+          color: colors[rating - 1],
+          extendedProps: {
+            hours_slept: hoursSlept,
+            custom_trackers: customTrackers
+          }
         });
       } else {
         // Otherwise, add as background event
         calendar.current!.getApi().addEvent({
-          title: !document.body.classList.contains('mobile') ? text : '',
+          title: text,
           start: startStr,
           allDay: true,
           display: 'background',
-          color: colors[rating - 1]
+          color: colors[rating - 1],
+          extendedProps: {
+            hours_slept: hoursSlept,
+            custom_trackers: customTrackers
+          }
         });
       }
     }
@@ -363,6 +403,41 @@ const Home = () => {
     setCustomTrackers(sort_custom_trackers([...customTrackers, newTracker]));
   };
 
+  const customCalendarRendering = (arg: any) => {
+    const event = arg.event;
+    const hours_slept = event.extendedProps?.hours_slept || '';
+    const custom_trackers = event.extendedProps?.custom_trackers as Record<string, string | boolean>;
+    // Are there any checkbox custom trackers that are checked?
+    const checked_checkbox_custom_trackers_exist = custom_trackers && Object.values(custom_trackers).some((value: string | boolean) => value === true);
+    return (
+      <div>
+        <div className="d-flex align-items-center me-1">
+          {
+            hours_slept &&
+            <div className={ "calendar-event-hours-slept ms-1" + ((checked_checkbox_custom_trackers_exist) ? '' : ' mt-half') }>
+              { parseInt(hours_slept) !== hours_slept
+                ? <span className="badge badge-dark">{ parseInt(hours_slept) } &#189; hours</span>
+                : <span className="badge badge-dark">{ parseInt(hours_slept) } hours</span>
+              }
+            </div>
+          }
+          {
+            custom_trackers && Object.keys(custom_trackers).map((key: string) => {
+              const value = custom_trackers[key];
+              const type = value === true || value === false ? 'checkbox' : 'text';
+              if (type !== 'checkbox' || value === false) return;
+              const trackerIcon = <i className="fas fa-lg fa-tree"></i>;
+              return <div className="calendar-event-custom-tracker ms-1 mt-1" key={ key }>{ trackerIcon }</div>
+            })
+          }
+        </div>
+        {
+          !document.body.classList.contains('mobile') && <div className="calendar-event-title ms-1 me-2">{ event.title }</div>
+        }
+      </div>
+    );
+  };
+
   return (
     <div className="home">
       { loading && <Loading /> }
@@ -381,6 +456,7 @@ const Home = () => {
         selectAllow={ handleSelectAllow }
         dayMaxEvents={ true }
         select={ handleDateSelect }
+        eventContent={ customCalendarRendering }
       />
 
       <div className="modal fade" tabIndex={ -1 } ref={ entryModal } aria-labelledby="entry-modal-label">
@@ -412,9 +488,13 @@ const Home = () => {
               <div>
                 <span style={{ "color": "var(--mdb-form-control-label-color)" }} className="no-highlight">Trackers</span>
                 <div className="form-outline mt-2" data-mdb-input-init>
-                  <input type="number" id="hours-slept-input" min="0" max="24" className="form-control" ref={ hoursSleptInput } onChange={ (e: any) => {
+                  <input type="number" id="hours-slept-input" min="0" max="24" step="0.5" className="form-control" ref={ hoursSleptInput } onChange={ (e: any) => {
                     if (e.target.value > 24) e.target.value = 24;
                     if (e.target.value < 0) e.target.value = 0;
+                    if (e.target.value == 0) e.target.value = '';
+                    const isFloat = parseFloat(e.target.value) !== parseInt(e.target.value);
+                    console.log(isFloat, parseFloat(e.target.value) - parseInt(e.target.value) === 0.5);
+                    if (isFloat && parseFloat(e.target.value) - parseInt(e.target.value) !== 0.5) e.target.value = parseInt(e.target.value) + 0.5;
                   }}/>
                   <label className="form-label" htmlFor="hours-slept-input">Hours slept</label>
                 </div>
@@ -436,7 +516,7 @@ const Home = () => {
             <div className="modal-footer">
               <button type="button" className="btn btn-secondary" data-mdb-ripple-init data-mdb-dismiss="modal">Close</button>
               <button type="button" className="btn btn-danger visually-hidden" data-mdb-ripple-init onClick={ entryModalDelete }>Delete</button>
-              <button type="button" className="btn btn-success" data-mdb-ripple-init data-mdb-dismiss="modal" onClick={ entryModalSave }>Save</button>
+              <button type="button" className="btn btn-success save-button" data-mdb-ripple-init data-mdb-dismiss="modal" onClick={ entryModalSave }>Save</button>
             </div>
           </div>
         </div>

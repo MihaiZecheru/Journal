@@ -109,3 +109,7 @@ label[for="customRange2"] {
   -moz-user-select: none;
   -ms-user-select: none;
 }
+
+.mt-half {
+  margin-top: .125rem;
+}
