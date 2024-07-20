@@ -9,10 +9,11 @@ import supabase from '../database/config/supabase';
 import Loading from './Loading';
 import { GetUserID } from '../database/GetUser';
 import TDateString from '../database/TDateString';
+import CustomTracker, { TCustomTrackerTypeField } from '../database/CustomTracker';
 
 function mobileCheck() {
   let check = false;
-  (function(a){if(/(android|bb\d+|meego).+mobile|avantgo|bada\/|blackberry|blazer|compal|elaine|fennec|hiptop|iemobile|ip(hone|od)|iris|kindle|lge |maemo|midp|mmp|mobile.+firefox|netfront|opera m(ob|in)i|palm( os)?|phone|p(ixi|re)\/|plucker|pocket|psp|series(4|6)0|symbian|treo|up\.(browser|link)|vodafone|wap|windows ce|xda|xiino/i.test(a)||/1207|6310|6590|3gso|4thp|50[1-6]i|770s|802s|a wa|abac|ac(er|oo|s\-)|ai(ko|rn)|al(av|ca|co)|amoi|an(ex|ny|yw)|aptu|ar(ch|go)|as(te|us)|attw|au(di|\-m|r |s )|avan|be(ck|ll|nq)|bi(lb|rd)|bl(ac|az)|br(e|v)w|bumb|bw\-(n|u)|c55\/|capi|ccwa|cdm\-|cell|chtm|cldc|cmd\-|co(mp|nd)|craw|da(it|ll|ng)|dbte|dc\-s|devi|dica|dmob|do(c|p)o|ds(12|\-d)|el(49|ai)|em(l2|ul)|er(ic|k0)|esl8|ez([4-7]0|os|wa|ze)|fetc|fly(\-|_)|g1 u|g560|gene|gf\-5|g\-mo|go(\.w|od)|gr(ad|un)|haie|hcit|hd\-(m|p|t)|hei\-|hi(pt|ta)|hp( i|ip)|hs\-c|ht(c(\-| |_|a|g|p|s|t)|tp)|hu(aw|tc)|i\-(20|go|ma)|i230|iac( |\-|\/)|ibro|idea|ig01|ikom|im1k|inno|ipaq|iris|ja(t|v)a|jbro|jemu|jigs|kddi|keji|kgt( |\/)|klon|kpt |kwc\-|kyo(c|k)|le(no|xi)|lg( g|\/(k|l|u)|50|54|\-[a-w])|libw|lynx|m1\-w|m3ga|m50\/|ma(te|ui|xo)|mc(01|21|ca)|m\-cr|me(rc|ri)|mi(o8|oa|ts)|mmef|mo(01|02|bi|de|do|t(\-| |o|v)|zz)|mt(50|p1|v )|mwbp|mywa|n10[0-2]|n20[2-3]|n30(0|2)|n50(0|2|5)|n7(0(0|1)|10)|ne((c|m)\-|on|tf|wf|wg|wt)|nok(6|i)|nzph|o2im|op(ti|wv)|oran|owg1|p800|pan(a|d|t)|pdxg|pg(13|\-([1-8]|c))|phil|pire|pl(ay|uc)|pn\-2|po(ck|rt|se)|prox|psio|pt\-g|qa\-a|qc(07|12|21|32|60|\-[2-7]|i\-)|qtek|r380|r600|raks|rim9|ro(ve|zo)|s55\/|sa(ge|ma|mm|ms|ny|va)|sc(01|h\-|oo|p\-)|sdk\/|se(c(\-|0|1)|47|mc|nd|ri)|sgh\-|shar|sie(\-|m)|sk\-0|sl(45|id)|sm(al|ar|b3|it|t5)|so(ft|ny)|sp(01|h\-|v\-|v )|sy(01|mb)|t2(18|50)|t6(00|10|18)|ta(gt|lk)|tcl\-|tdg\-|tel(i|m)|tim\-|t\-mo|to(pl|sh)|ts(70|m\-|m3|m5)|tx\-9|up(\.b|g1|si)|utst|v400|v750|veri|vi(rg|te)|vk(40|5[0-3]|\-v)|vm40|voda|vulc|vx(52|53|60|61|70|80|81|83|85|98)|w3c(\-| )|webc|whit|wi(g |nc|nw)|wmlb|wonu|x700|yas\-|your|zeto|zte\-/i.test(a.substr(0,4))) check = true;})(navigator.userAgent||navigator.vendor);
+  (function(a){if(/(android|bb\d+|meego).+mobile|avantgo|bada\/|blackberry|blazer|compal|elaine|fennec|hiptop|iemobile|ip(hone|od)|iris|kindle|lge |maemo|midp|mmp|mobile.+firefox|netfront|opera m(ob|in)i|palm( os)?|phone|p(ixi|re)\/|plucker|pocket|psp|series(4|6)0|symbian|treo|up\.(browser|link)|vodafone|wap|windows ce|xda|xiino/i.test(a)||/1207|6310|6590|3gso|4thp|50[1-6]i|770s|802s|a wa|abac|ac(er|oo|s\-)|ai(ko|rn)|al(av|ca|co)|amoi|an(ex|ny|yw)|aptu|ar(ch|go)|as(te|us)|attw|au(di|\-m|r |s )|avan|be(ck|ll|nq)|bi(lb|rd)|bl(ac|az)|br(e|v)w|bumb|bw\-(n|u)|c55\/|capi|ccwa|cdm\-|cell|chtm|cldc|cmd\-|co(mp|nd)|craw|da(it|ll|ng)|dbte|dc\-s|devi|dica|dmob|do(c|p)o|ds(12|\-d)|el(49|ai)|em(l2|ul)|er(ic|k0)|esl8|ez([4-7]0|os|wa|ze)|fetc|fly(\-|_)|g1 u|g560|gene|gf\-5|g\-mo|go(\.w|od)|gr(ad|un)|haie|hcit|hd\-(m|p|t)|hei\-|hi(pt|ta)|hp( i|ip)|hs\-c|ht(c(\-| |_|a|g|p|s|t)|tp)|hu(aw|tc)|i\-(20|go|ma)|i230|iac( |\-|\/)|ibro|idea|ig01|ikom|im1k|inno|ipaq|iris|ja(t|v)a|jbro|jemu|jigs|kddi|keji|kgt( |\/)|klon|kpt |kwc\-|kyo(c|k)|le(no|xi)|lg( g|\/(k|l|u)|50|54|\-[a-w])|libw|lynx|m1\-w|m3ga|m50\/|ma(te|ui|xo)|mc(01|21|ca)|m\-cr|me(rc|ri)|mi(o8|oa|ts)|mmef|mo(01|02|bi|de|do|t(\-| |o|v)|zz)|mt(50|p1|v )|mwbp|mywa|n10[0-2]|n20[2-3]|n30(0|2)|n50(0|2|5)|n7(0(0|1)|10)|ne((c|m)\-|on|tf|wf|wg|wt)|nok(6|i)|nzph|o2im|op(ti|wv)|oran|owg1|p800|pan(a|d|t)|pdxg|pg(13|\-([1-8]|c))|phil|pire|pl(ay|uc)|pn\-2|po(ck|rt|se)|prox|psio|pt\-g|qa\-a|qc(07|12|21|32|60|\-[2-7]|i\-)|qtek|r380|r600|raks|rim9|ro(ve|zo)|s55\/|sa(ge|ma|mm|ms|ny|va)|sc(01|h\-|oo|p\-)|sdk\/|se(c(\-|0|1)|47|mc|nd|ri)|sgh\-|shar|sie(\-|m)|sk\-0|sl(45|id)|sm(al|ar|b3|it|t5)|so(ft|ny)|sp(01|h\-|v\-|v )|sy(01|mb)|t2(18|50)|t6(00|10|18)|ta(gt|lk)|tcl\-|tdg\-|tel(i|m)|tim\-|t\-mo|to(pl|sh)|ts(70|m\-|m3|m5)|tx\-9|up(\.b|g1|si)|utst|v400|v750|veri|vi(rg|te)|vk(40|5[0-3]|\-v)|vm40|voda|vulc|vx(52|53|60|61|70|80|81|83|85|98)|w3c(\-| )|webc|whit|wi(g |nc|nw)|wmlb|wonu|x700|yas\-|your|zeto|zte\-/i.test(a.substr(0,4))) check = true;})(navigator.userAgent||navigator.vendor); // eslint-disable-line
   return check;
 }
 
@@ -27,14 +28,32 @@ function GetTodaysDate(): TDateString {
 const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const colors = ['#FF0000', '#FF3300', '#FF6600', '#FF9900', '#FFCC00', '#FFFF00', '#CCFF00', '#99FF00', '#66FF00', '#33FF00', '#bdbdbd']; // gray at the end
 
+function sort_custom_trackers(trackers: CustomTracker[]): CustomTracker[] {
+  // Sort the custom trackers so that text-input trackers are first and checkbox trackers are last
+  return trackers.sort((a: CustomTracker, b: CustomTracker) => a.type === b.type ? 0 : a.type === 'text' ? -1 : 1);
+}
+
 const Home = () => {
   const calendar = useRef<FullCalendar>(null);
+
+  // Entry modal
   const entryModal = useRef<HTMLDivElement>(null);
   const entryModalTitle = useRef<HTMLHeadingElement>(null);
   const entryModalLabel = useRef<HTMLLabelElement>(null);
   const entryModalRatingInput = useRef<HTMLInputElement>(null);
   const entryModalTextArea = useRef<HTMLTextAreaElement>(null);
   const hoursSleptInput = useRef<HTMLInputElement>(null);
+
+  // Custom Trackers
+  const customTrackersModal = useRef<HTMLDivElement>(null);
+  const customTrackersModalBody = useRef<HTMLDivElement>(null);
+  const addCustomTrackerModal = useRef<HTMLDivElement>(null);
+  const [customTrackers, setCustomTrackers] = useState<CustomTracker[]>([]);
+
+  // Add custom trackers modal
+  const addCustomTrackerTypeLabel = useRef<HTMLLabelElement>(null);
+  const addCustomTrackerType = useRef<HTMLInputElement>(null);
+  const addCustomTrackerName = useRef<HTMLInputElement>(null);
 
   const [loading, setLoading] = useState<boolean>(true);
   const entries = useRef<Entry[]>([]);
@@ -81,12 +100,36 @@ const Home = () => {
           color: colors[today.rating - 1]
         });
       }
+
+      const { data: data1, error: error1 } = await supabase
+        .from('CustomTrackers')
+        .select()
+        .eq('user_id', await GetUserID());
+
+      if (error1) {
+        console.error(`Error fetching custom trackers: ${error1.message}`);
+        throw error;
+      }
+
+      setCustomTrackers(sort_custom_trackers(data1));
       
       // If a 1.5 seconds haven't passed, wait until they have
       while (Date.now() - timeStamp < 1500) continue;
       setLoading(false);
     })();
   }, []);
+
+  useEffect(() => {
+    const btn = document.querySelector('.fc-custom-btn-button')!;
+    btn.textContent = 'Custom Trackers';
+    btn.addEventListener('click', () => {
+      new Modal(customTrackersModal.current).show();
+    });
+  }, []);
+
+  useEffect(() => {
+    customTrackersModalBody.current!.querySelectorAll('.custom-tracker-input').forEach((input: Element) => new Input(input));
+  }, [customTrackers]);
 
   const setModalColor = (rating: number) => {
     const color = colors[rating - 1];
@@ -99,6 +142,14 @@ const Home = () => {
     const date = new Date(selectInfo.start);
     const weekday = weekdays[date.getDay()];
     const month = date.toLocaleString('default', { month: 'long' });
+
+    // Activate custom tracker inputs and clear input
+    document.querySelectorAll('.custom-tracker-input').forEach((input: Element) => {
+      const inputBox = input.querySelector('input') as HTMLInputElement;
+      if (inputBox?.type === 'checkbox') inputBox.checked = false;
+      else inputBox.value = '';
+      new Input(input);
+    });
 
     // rating colors
     entryModalRatingInput.current!.value = '5';
@@ -159,6 +210,14 @@ const Home = () => {
     let rating = parseInt(entryModalRatingInput.current!.value);
     const hoursSlept = parseInt(hoursSleptInput.current!.value);
 
+    // Get custom trackers
+    const customTrackers: { [key: string]: string | boolean } = {};
+    document.querySelectorAll('.custom-tracker-input').forEach((input: Element) => {
+      const name = input.getAttribute('data-tracker-name')!;
+      const value = input.querySelector('input')?.type === 'checkbox' ? (input.querySelector('input') as HTMLInputElement).checked : (input.querySelector('input') as HTMLInputElement).value;
+      if (name && (value || value === false)) customTrackers[name] = value;
+    });
+
     // If no text, don't save
     if (!text.length) return;
 
@@ -172,7 +231,7 @@ const Home = () => {
       // Update the entry in the database
       const { error } = await supabase
         .from('Entries')
-        .update({ rating, journal_entry: text, hours_slept: hoursSlept })
+        .update({ rating, journal_entry: text, hours_slept: hoursSlept, custom_trackers: customTrackers })
         .eq('date', startStr)
         .eq('user_id', await GetUserID());
 
@@ -194,7 +253,7 @@ const Home = () => {
       // Add the entry to the database
       const { error } = await supabase
         .from('Entries')
-        .insert({ user_id: await GetUserID(), date: startStr, rating, journal_entry: text, hours_slept: hoursSlept });
+        .insert({ user_id: await GetUserID(), date: startStr, rating, journal_entry: text, hours_slept: hoursSlept, custom_trackers: customTrackers });
 
       if (error) {
         console.error(`Error inserting entry: ${error.message}`);
@@ -202,10 +261,9 @@ const Home = () => {
       }
 
       // Add to entries
-      entries.current.push({ user_id: await GetUserID(), date: startStr as TDateString, rating, journal_entry: text, hours_slept: hoursSlept });
+      entries.current.push({ user_id: await GetUserID(), date: startStr as TDateString, rating, journal_entry: text, hours_slept: hoursSlept, custom_trackers: customTrackers });
       
       // If today, add as foreground event
-      console.log(startStr, GetTodaysDate());
       if (startStr === GetTodaysDate()) {
         calendar.current!.getApi().addEvent({
           title: !document.body.classList.contains('mobile') ? text : '',
@@ -265,6 +323,46 @@ const Home = () => {
     (entryModal.current!.querySelector('button.btn-secondary') as HTMLButtonElement).click();
   }
 
+  const deleteCustomTracker = async (name: string) => {
+    setCustomTrackers(sort_custom_trackers(customTrackers.filter((tracker: CustomTracker) => tracker.name !== name)));
+
+    const { error } = await supabase
+      .from('CustomTrackers')
+      .delete()
+      .eq('user_id', await GetUserID())
+      .eq('name', name);
+
+    if (error) {
+      console.error(`Error deleting custom tracker: ${error.message}`);
+      throw error;
+    }
+  };
+
+  const createNewCustomTracker = async (name: string, type: TCustomTrackerTypeField) => {
+    if (!name) return;
+
+    // Close modal
+    (addCustomTrackerModal.current!.querySelector('button.btn-secondary') as HTMLButtonElement).click();
+
+    const newTracker: CustomTracker = { user_id: await GetUserID(), name: name[0].toUpperCase() + name.substring(1), type };
+    
+    // Check to see if a tracker with this name already exists
+    if (customTrackers.find((tracker: CustomTracker) => tracker.name === name)) {
+      return alert(`A custom tracker with the name '${name}' already exists`);
+    }
+
+    const { error } = await supabase
+      .from('CustomTrackers')
+      .insert(newTracker);
+
+    if (error) {
+      console.error(`Error inserting custom tracker: ${error.message}`);
+      throw error;
+    }
+
+    setCustomTrackers(sort_custom_trackers([...customTrackers, newTracker]));
+  };
+
   return (
     <div className="home">
       { loading && <Loading /> }
@@ -272,7 +370,7 @@ const Home = () => {
         headerToolbar={{
           left: 'prevYear,prev,next,nextYear',
           center: 'title',
-          right: 'today'
+          right: 'today,custom-btn'
         }}
         weekends={ true }
         initialView="dayGridMonth"
@@ -320,12 +418,104 @@ const Home = () => {
                   }}/>
                   <label className="form-label" htmlFor="hours-slept-input">Hours slept</label>
                 </div>
+                { customTrackers && customTrackers.map((tracker: CustomTracker, index: number) => {
+                    const id = tracker.name.replaceAll(' ', '-') + '-' + index.toString() + '-calendar-input';
+                    return tracker.type === 'checkbox'
+                      ? <div className="form-check form-switch mb-2 mt-2 custom-tracker-input" data-mdb-input-init key={ id } data-tracker-name={ tracker.name }>
+                          <input className="form-check-input shadow-5" type="checkbox" id={ id } />
+                          <label className="form-check-label me-2 no-highlight" htmlFor={ id }>{ tracker.name }</label>
+                        </div>
+                      : <div className="form-outline me-2 mt-2 custom-tracker-input" data-mdb-input-init key={ id } data-tracker-name={ tracker.name }>
+                          <input type="text" id={ id } className="form-control" />
+                          <label className="form-label" htmlFor={ id }>{ tracker.name }</label>
+                        </div>
+                  })
+                }
               </div>
             </div>
             <div className="modal-footer">
               <button type="button" className="btn btn-secondary" data-mdb-ripple-init data-mdb-dismiss="modal">Close</button>
               <button type="button" className="btn btn-danger visually-hidden" data-mdb-ripple-init onClick={ entryModalDelete }>Delete</button>
               <button type="button" className="btn btn-success" data-mdb-ripple-init data-mdb-dismiss="modal" onClick={ entryModalSave }>Save</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal fade" ref={ customTrackersModal } tabIndex={ -1 } aria-labelledby="custom-trackers-modalLabel" aria-hidden="true">
+        <div className="modal-dialog">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h5 className="modal-title" id="custom-trackers-modalLabel">Custom Trackers</h5>
+              <button type="button" className="btn-close" data-mdb-ripple-init data-mdb-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div className="modal-body" ref={ customTrackersModalBody }>
+              { !customTrackers.length && 'No custom trackers' }
+              { customTrackers && customTrackers.map((tracker: CustomTracker, index: number) => {
+                  const id = tracker.name.replaceAll(' ', '-') + '-' + index.toString() + '-calendar-input';
+                  return tracker.type === 'checkbox' ?
+                  <div className="d-flex align-items-center justify-content-between">
+                    <div className="d-flex">
+                      <h5>#{ index + 1 }</h5>
+                      <div className="vr ms-2 me-2"></div>
+                      <div className="form-check form-switch mb-2 custom-tracker-input" data-mdb-input-init key={ id }>
+                        <input className="form-check-input shadow-5" type="checkbox" id={ id } />
+                        <label className="form-check-label me-2 no-highlight" htmlFor={ id }>{ tracker.name }</label>
+                      </div>
+                    </div>
+                    <i className="far fa-trash-can fa-lg custom-tracker-trash-can" onClick={ () => deleteCustomTracker(tracker.name) }></i>
+                  </div>
+                  : <div className="d-flex align-items-center justify-content-center">
+                      <h5>#{ index + 1 }</h5>
+                      <div className="vr me-2 ms-2"></div>
+                      <div className="form-outline mb-2 me-2 custom-tracker-input" data-mdb-input-init key={ id }>
+                        <input type="text" id={ id } className="form-control" />
+                        <label className="form-label" htmlFor={ id }>{ tracker.name }</label>
+                      </div>
+                      <i className="far fa-trash-can fa-lg custom-tracker-trash-can" onClick={ () => deleteCustomTracker(tracker.name) }></i>
+                    </div>
+                })
+              }
+            </div>
+            <div className="modal-footer d-flex justify-content-between">
+              <div>
+                <i className="fas fa-square-plus fa-2x add-custom-tracker-btn" onClick={ () => {
+                  new Input(addCustomTrackerName.current!.parentElement);
+                  addCustomTrackerName.current!.value = '';
+                  addCustomTrackerType.current!.checked = true;
+                  new Modal(addCustomTrackerModal.current).show();
+                }}></i>
+              </div>
+              <div>
+                <button type="button" className="btn btn-secondary custom-tracker-modal-close-btn" data-mdb-ripple-init data-mdb-dismiss="modal">Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal fade" id="add-custom-tracker-modal" ref={ addCustomTrackerModal } tabIndex={ -1 } aria-labelledby="add-custom-tracker-modal-label" aria-hidden="true">
+        <div className="modal-dialog">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h5 className="modal-title" id="add-custom-tracker-modal-label">Add Custom Tracker</h5>
+              <button type="button" className="btn-close" data-mdb-ripple-init data-mdb-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div className="modal-body">
+              <div className="form-outline mb-2" data-mdb-input-init>
+                <input type="text" id="add-custom-tracker-name" className="form-control" ref={ addCustomTrackerName } />
+                <label className="form-label" htmlFor="add-custom-tracker-name">Tracker Name</label>
+              </div>
+              <div className="form-check form-switch">
+                <input className="form-check-input" type="checkbox" role="switch" id="add-custom-tracker-type" ref={ addCustomTrackerType } onChange={ (e) => {
+                  addCustomTrackerTypeLabel.current!.textContent = (e.target as HTMLInputElement).checked ? 'Checkbox' : 'Text Input';
+                }} />
+                <label className="form-check-label" htmlFor="add-custom-tracker-type" ref={ addCustomTrackerTypeLabel }>Checkbox</label>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-secondary" data-mdb-ripple-init data-mdb-dismiss="modal">Close</button>
+              <button type="button" className="btn btn-primary" data-mdb-ripple-init onClick={ () => createNewCustomTracker(addCustomTrackerName.current!.value.trim(), addCustomTrackerType.current!.checked ? 'checkbox' : 'text') }>Add Tracker</button>
             </div>
           </div>
         </div>

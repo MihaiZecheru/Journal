@@ -87,3 +87,25 @@ label[for="customRange2"] {
   background-color: black!important;
   color: white!important;
 }
+
+.add-custom-tracker-btn {
+  color: var(--mdb-success);
+  cursor: pointer;
+}
+
+.custom-tracker-trash-can {
+  color: var(--mdb-danger);
+  cursor: pointer;
+}
+
+.custom-tracker-modal-close-btn {
+  margin-right: .5rem;
+}
+
+.fc-daygrid-day-number,
+.fc-col-header-cell-cushion {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}
