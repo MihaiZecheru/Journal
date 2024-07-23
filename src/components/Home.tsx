@@ -93,6 +93,12 @@ const Home = () => {
   const addCustomTrackerName = useRef<HTMLInputElement>(null);
   const setCustomTrackerIconModal = useRef<HTMLDivElement>(null);
 
+  // View entry modal
+  const viewEntryModal = useRef<HTMLDivElement>(null);
+  const viewEntryModalBody = useRef<HTMLDivElement>(null);
+  const viewEntryModalTitle = useRef<HTMLHeadingElement>(null);
+  const viewEntryModalHoursSleptArea = useRef<HTMLDivElement>(null);
+
   const [loading, setLoading] = useState<boolean>(true);
   const entries = useRef<Entry[]>([]);
 
@@ -158,17 +164,6 @@ const Home = () => {
     const month = date.toLocaleString('default', { month: 'long' });
     const isMoreThanSixDaysAgo = (new Date().getTime() - date.getTime()) / (1000 * 60 * 60 * 24) > 7;
 
-    // TODO: Make custom viewing modal
-    if (isMoreThanSixDaysAgo) {
-      // Hide the save button and prevent the user from modifying any of the inputs
-      entryModal.current!.querySelector('.save-button')!.classList.add('visually-hidden');
-      entryModal.current!.querySelectorAll('input, textarea').forEach((input: Element) => (input as HTMLInputElement).disabled = true);
-    } else {
-      // Enable the save button and allow the user to modify the inputs
-      entryModal.current!.querySelector('.save-button')!.classList.remove('visually-hidden');
-      entryModal.current!.querySelectorAll('input, textarea').forEach((input: Element) => (input as HTMLInputElement).disabled = false);
-    }
-
     // Activate custom tracker inputs and clear input
     document.querySelectorAll('.custom-tracker-input').forEach((input: Element) => {
       const inputBox = input.querySelector('input') as HTMLInputElement;
@@ -190,12 +185,47 @@ const Home = () => {
     // Clear hours slept input
     hoursSleptInput.current!.value = '';
 
+    // Set modal title
+    entryModalTitle.current!.textContent = `${weekday}, ${month} ${date.getDate()}`;
+    entryModalLabel.current!.textContent = date.getDate() === new Date().getDate() ? 'What happened today?' : (date.getDate() === new Date().getDate() - 1) ? `What happened yesterday?` : `What happened on ${weekday}?`;
+    entryModal.current!.setAttribute('data-startStr', selectInfo.startStr);
+
     // Hide delete button
     (entryModal.current!.querySelector('.btn-danger') as HTMLButtonElement).classList.add('visually-hidden');
 
     // Check if an entry already exists for the selected date
     const existingEntry: Entry | null = entries.current.find((entry: Entry) => entry.date === date.toISOString().split('T')[0]) || null;
-    if (existingEntry) {
+
+    // Show view modal
+    if (isMoreThanSixDaysAgo) {
+      if (!existingEntry) return alert(`No entry exists for ${weekday}, ${month} ${date.getDate()}`);
+      viewEntryModalTitle.current!.textContent = `${weekday}, ${month} ${date.getDate()}`;
+      const color = colors[existingEntry.rating - 1];
+      viewEntryModalTitle.current!.parentElement!.style.backgroundColor = color;
+      viewEntryModalBody.current!.innerHTML = `
+        <div class="mb-2 view-entry-text-content-box"><span>${existingEntry.journal_entry}</span></div>
+        <div>
+          ${
+            existingEntry.custom_trackers ? customTrackers.map((custom_tracker: CustomTracker) => {
+              const value = existingEntry.custom_trackers![custom_tracker.name];
+              const isCheckbox = value === true || value === false;
+              if (isCheckbox) {
+                return `<div class="d-flex align-items-center mt-2"><i class="fa-lg me-2 ${value === true ? 'active-custom-tracker-color' : ''} ${customTrackers.find((tracker: CustomTracker) => tracker.name === custom_tracker.name)!.icon_classname}"></i><span>${custom_tracker.name}</span></div>`;
+              } else {
+                if (value === '' || !value || value === null) return '';
+                return `<div class="mt-2 d-flex align-items-center view-entry-text-content-box"><span class="active-custom-tracker-color">${custom_tracker.name}:</span><span> ${value}</span></div>`;
+              }
+            }).join('') : ''
+          }
+        </div>
+      `;
+
+      viewEntryModalHoursSleptArea.current!.innerHTML =  existingEntry.hours_slept ? `<div><span class="badge badge-info no-highlight br-5">${existingEntry.hours_slept} hours slept</span></div>` : '';
+
+      return new Modal(viewEntryModal.current).show();
+    // Show create/edit entry modal
+    } else {
+      if (!existingEntry) return new Modal(entryModal.current).show();
       // Set textarea to existing entry
       entryModalTextArea.current!.value = existingEntry.journal_entry;
 
@@ -206,7 +236,7 @@ const Home = () => {
       if (existingEntry.hours_slept) {
         hoursSleptInput.current!.value = existingEntry.hours_slept.toString();
       }
-      
+
       // Set modal color
       entryModalRatingInput.current!.value = (existingRating === 11 ? 5 : existingRating).toString();
       setModalColor(existingRating);
@@ -228,15 +258,9 @@ const Home = () => {
           }
         });
       }
+      
+      new Modal(entryModal.current).show()
     }
-
-    // Show modal popup
-    entryModalTitle.current!.textContent = `${weekday}, ${month} ${date.getDate()}`;
-    entryModalLabel.current!.textContent = date.getDate() === new Date().getDate() ? 'What happened today?' : (date.getDate() === new Date().getDate() - 1) ? `What happened yesterday?` : `What happened on ${weekday}?`;
-    entryModal.current!.setAttribute('data-startStr', selectInfo.startStr);
-
-    // Show modal
-    new Modal(entryModal.current).show();
   };
 
   const handleSelectAllow = (selectInfo: any) => {
@@ -259,7 +283,7 @@ const Home = () => {
     });
 
     // If no text, don't save
-    if (!text.length) return;
+    if (!text.length) return alert("Text must be entered in the 'what happened' box to save the entry");
 
     // If rating is gray, set to 11
     if ((entryModal.current!.querySelector('.modal-header')! as HTMLElement).style.backgroundColor === "rgb(189, 189, 189)") rating = 11;
@@ -439,7 +463,7 @@ const Home = () => {
               const value = custom_trackers[key];
               const type = value === true || value === false ? 'checkbox' : 'text';
               if (type !== 'checkbox' || value === false) return;
-              if (!customTrackers.length) return; // TODO: custom trackers not loaded yet
+              if (!customTrackers.length) return;
               const icon_classname = customTrackers.find((tracker: CustomTracker) => tracker.name === key)!.icon_classname;
               const trackerIcon = <i className={ "fa-lg " + icon_classname }></i>;
               return <div className="calendar-event-custom-tracker ms-1 mt-1" key={ key }>{ trackerIcon }</div>
@@ -693,6 +717,22 @@ const Home = () => {
                 <span>Save Icon</span>
                 <div id="save-btn-icon-slot" className="ms-2"></div>
               </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal fade" ref={ viewEntryModal } tabIndex={ -1 } aria-labelledby="view-entry-modal-label" aria-hidden="true">
+        <div className="modal-dialog">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h5 className="modal-title" id="view-entry-modal-label" ref={ viewEntryModalTitle }>DYNAMIC TITLE</h5>
+              <button type="button" className="btn-close" data-mdb-ripple-init data-mdb-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div className="modal-body" ref={ viewEntryModalBody }>DYNAMIC BODY</div>
+            <div className="modal-footer d-flex justify-content-between align-items-center">
+              <div ref={ viewEntryModalHoursSleptArea }></div>
+              <button type="button" className="btn btn-secondary" data-mdb-ripple-init data-mdb-dismiss="modal">Close</button>
             </div>
           </div>
         </div>

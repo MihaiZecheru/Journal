@@ -147,3 +147,10 @@ label[for="customRange2"] {
 .active-custom-tracker-color {
   color: var(--mdb-primary);
 }
+
+.view-entry-text-content-box {
+  white-space: pre-wrap;
+  border: var(--mdb-secondary) 1px solid;
+  padding: .5rem;
+  border-radius: .5rem;
+}
