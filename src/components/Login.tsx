@@ -7,7 +7,7 @@ const Login = () => {
   const navigate = useNavigate();
 
   const loginWithProvider = async (provider: 'github' | 'google') => {
-    const { data, error } = await supabase.auth.signInWithOAuth({ provider });
+    const { error } = await supabase.auth.signInWithOAuth({ provider });
     
     if (error) {
       console.error(error.message);
@@ -61,7 +61,12 @@ const Login = () => {
 
       document.getElementById("send-email-btn")?.addEventListener('click', async () => {
         const email = (modal.querySelector('input') as HTMLInputElement).value;
-        let { data, error } = await supabase.auth.resetPasswordForEmail(email);
+        let { error } = await supabase.auth.resetPasswordForEmail(email);
+
+        if (error) {
+          console.error(error.message);
+          throw error;
+        }
         // TODO: in supabase configure the email
       });
     });
@@ -78,7 +83,7 @@ const Login = () => {
           <div className="row d-flex align-items-center justify-content-center h-100">
             <div className="col-md-8 col-lg-7 col-xl-6">
               <img src="https://mdbcdn.b-cdn.net/img/Photos/new-templates/bootstrap-login-form/draw2.svg"
-                className="img-fluid" alt="Phone image" />
+                className="img-fluid" />
             </div>
             <div className="col-md-7 col-lg-5 col-xl-5 offset-xl-1">
               <form>
@@ -96,7 +101,7 @@ const Login = () => {
                   <div>
                     <span>New to Journal?</span><Link to="/register"> Register now</Link>
                   </div>
-                  <a role="button" id="forgot-password-btn">Forgot password?</a>
+                  <a href="" role="button" id="forgot-password-btn">Forgot password?</a>
                 </div>
 
                 <button type="submit" data-mdb-button-init data-mdb-ripple-init className="btn btn-primary btn-lg btn-block" id="login-btn">Login</button>
