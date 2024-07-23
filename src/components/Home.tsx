@@ -462,8 +462,8 @@ const Home = () => {
             custom_trackers && Object.keys(custom_trackers).map((key: string) => {
               const value = custom_trackers[key];
               const type = value === true || value === false ? 'checkbox' : 'text';
-              if (type !== 'checkbox' || value === false) return;
-              if (!customTrackers.length) return;
+              if (type !== 'checkbox' || value === false) return '';
+              if (!customTrackers.length) return '';
               const icon_classname = customTrackers.find((tracker: CustomTracker) => tracker.name === key)!.icon_classname;
               const trackerIcon = <i className={ "fa-lg " + icon_classname }></i>;
               return <div className="calendar-event-custom-tracker ms-1 mt-1" key={ key }>{ trackerIcon }</div>
@@ -545,6 +545,7 @@ const Home = () => {
                   <input type="number" id="hours-slept-input" min="0" max="24" step="0.5" className="form-control" ref={ hoursSleptInput } onChange={ (e: any) => {
                     if (e.target.value > 24) e.target.value = 24;
                     if (e.target.value < 0) e.target.value = 0;
+                    // eslint-disable-next-line eqeqeq
                     if (e.target.value == 0) e.target.value = '';
                     const isFloat = parseFloat(e.target.value) !== parseInt(e.target.value);
                     if (isFloat && parseFloat(e.target.value) - parseInt(e.target.value) !== 0.5) e.target.value = parseInt(e.target.value) + 0.5;
