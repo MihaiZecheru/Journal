@@ -2,7 +2,7 @@
 
 # dependencies
 /node_modules
-/src/mdbootstrap
+# /src/mdbootstrap
 /.pnp
 .pnp.js
 
