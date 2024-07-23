@@ -46,6 +46,7 @@
     ]
   },
   "devDependencies": {
+    "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
     "dayjs": "^1.11.11",
     "mdb-ui-kit": "^7.3.2"
   }
