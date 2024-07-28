@@ -3,6 +3,11 @@ import { useEffect } from 'react';
 import supabase from '../database/config/supabase';
 import { Link, useNavigate } from 'react-router-dom';
 
+const isSignedIn = async (): Promise<boolean> => {
+  const { data: { session } } = await supabase.auth.getSession();
+	return !!session;
+}
+
 const Login = () => {
   const navigate = useNavigate();
 
@@ -21,6 +26,10 @@ const Login = () => {
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN') navigate("/home");
     });
+		
+		isSignedIn().then(__isSignedIn => {
+			if (__isSignedIn) navigate('/home');
+		});
 
     const emailBox = document.getElementById('email-box') as HTMLInputElement;
     const passwordBox = document.getElementById('password-box') as HTMLInputElement;
