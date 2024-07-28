@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import '../styles/landing.css';
 
 const Landing = () => {
@@ -10,7 +10,7 @@ const Landing = () => {
 
   return (
     <div className="landing">
-      <h1 className="animation slide-up no-highlight slower delay-3s">Remember every day with Journal</h1>
+      <Link to="/home"><h1 className="animation slide-up no-highlight slower delay-3s">Remember every day with Journal</h1></Link>
       <div className="logo-animation animation slide-up slower delay-3s no-highlight d-flex align-items-center">
         <button className="cssbuttons-io-button" onClick={ onBtnClick }>
           Get started
