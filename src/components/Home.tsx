@@ -201,6 +201,7 @@ const Home = () => {
       if (!existingEntry) return alert(`No entry exists for ${weekday}, ${month} ${date.getDate()}`);
       viewEntryModalTitle.current!.textContent = `${weekday}, ${month} ${date.getDate()}`;
       const color = colors[existingEntry.rating - 1];
+			viewEntryModal.current!.setAttribute('data-startStr', existingEntry.date);
       viewEntryModalTitle.current!.parentElement!.style.backgroundColor = color;
       viewEntryModalBody.current!.innerHTML = `
         <div class="mb-2 view-entry-text-content-box"><span>${existingEntry.journal_entry}</span></div>
@@ -370,8 +371,7 @@ const Home = () => {
     }
   };
 
-  const entryModalDelete = async () => {
-    const startStr = entryModal.current!.getAttribute('data-startStr')!;
+  const entryModalDelete = async (startStr: string) => {
     const existingEntry: Entry | null = entries.current.find((entry: Entry) => entry.date === startStr) || null;
     if (!existingEntry) return;
 
@@ -572,7 +572,7 @@ const Home = () => {
             </div>
             <div className="modal-footer">
               <button type="button" className="btn btn-secondary" data-mdb-ripple-init data-mdb-dismiss="modal">Close</button>
-              <button type="button" className="btn btn-danger visually-hidden" data-mdb-ripple-init onClick={ entryModalDelete }>Delete</button>
+              <button type="button" className="btn btn-danger visually-hidden" data-mdb-ripple-init onClick={ () => entryModalDelete(entryModal.current!.getAttribute('data-startStr')!) }>Delete</button>
               <button type="button" className="btn btn-success save-button" data-mdb-ripple-init data-mdb-dismiss="modal" onClick={ entryModalSave }>Save</button>
             </div>
           </div>
@@ -723,7 +723,7 @@ const Home = () => {
         </div>
       </div>
 
-      <div className="modal fade" ref={ viewEntryModal } tabIndex={ -1 } aria-labelledby="view-entry-modal-label" aria-hidden="true">
+      <div className="modal fade" ref={ viewEntryModal } tabIndex={ -1 } aria-labelledby="view-entry-modal-label" aria-hidden="true" data-startStr="DYNAMICALLY ADDED">
         <div className="modal-dialog">
           <div className="modal-content">
             <div className="modal-header">
@@ -733,7 +733,10 @@ const Home = () => {
             <div className="modal-body" ref={ viewEntryModalBody }>DYNAMIC BODY</div>
             <div className="modal-footer d-flex justify-content-between align-items-center">
               <div ref={ viewEntryModalHoursSleptArea }></div>
-              <button type="button" className="btn btn-secondary" data-mdb-ripple-init data-mdb-dismiss="modal">Close</button>
+              <div>
+                <button type="button" className="btn btn-danger me-2" data-mdb-ripple-init data-mdb-dismiss="modal" onClick={ () => entryModalDelete(viewEntryModal.current!.getAttribute('data-startStr')!) }>Delete</button>
+                <button type="button" className="btn btn-secondary" data-mdb-ripple-init data-mdb-dismiss="modal">Close</button>
+              </div>
             </div>
           </div>
         </div>
