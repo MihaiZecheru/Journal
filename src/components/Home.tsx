@@ -661,7 +661,6 @@ const Home = () => {
               <button type="button" className="btn btn-secondary" data-mdb-ripple-init data-mdb-dismiss="modal">Close</button>
               <button type="button" className="btn btn-primary" data-mdb-ripple-init onClick={ () => {
                 const icon = document.querySelector('.icons-grid i.selected');
-                if (!icon) return alert('You must select an icon before saving');
                 icon?.classList.remove('selected');
                 createNewCustomTracker(
                   addCustomTrackerName.current!.value.trim(),
@@ -712,7 +711,8 @@ const Home = () => {
                 onClick={() => {
                   (document.querySelector('#add-custom-tracker-icon-modal .btn-secondary') as HTMLButtonElement).click();
                   const tracker_name = setCustomTrackerIconModal.current!.getAttribute('data-tracker-name')!;
-                  const icon_class_string = document.querySelector('.icons-grid i.selected')!.getAttribute('data-icon-class-string')!;
+                  const icon_class_string = document.querySelector('.icons-grid i.selected')?.getAttribute('data-icon-class-string');
+                  if (!icon_class_string) return alert('You must select an icon before saving');
                   saveCustomTrackerIcon(tracker_name, icon_class_string) ;
                 }}>
                 <span>Save Icon</span>
