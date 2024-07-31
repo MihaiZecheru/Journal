@@ -97,12 +97,12 @@ const Login = () => {
             <div className="col-md-7 col-lg-5 col-xl-5 offset-xl-1">
               <form>
                 <div data-mdb-input-init className="form-outline mb-4">
-                  <input type="email" id="email-box" className="form-control form-control-lg" />
+                  <input type="email" id="email-box" className="form-control form-control-lg" autocomplete />
                   <label className="form-label" htmlFor="email-box">Email address</label>
                 </div>
 
                 <div data-mdb-input-init className="form-outline mb-4">
-                  <input type="password" id="password-box" className="form-control form-control-lg" />
+                  <input type="password" id="password-box" className="form-control form-control-lg" autocomplete />
                   <label className="form-label" htmlFor="password-box">Password</label>
                 </div>
 
