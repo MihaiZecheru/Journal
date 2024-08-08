@@ -11,6 +11,7 @@ import { GetUserID } from '../database/GetUser';
 import TDateString from '../database/TDateString';
 import CustomTracker, { TCustomTrackerTypeField } from '../database/CustomTracker';
 import icons from '../icons';
+import { useNavigate } from 'react-router-dom';
 
 function mobileCheck() {
   let check = false;
@@ -71,6 +72,7 @@ function loadCalendar(entries: Entry[], calendarAPI: any) {
 }
 
 const Home = () => {
+  const navigate = useNavigate();
   const calendar = useRef<FullCalendar>(null);
 
   // Entry modal
@@ -142,10 +144,22 @@ const Home = () => {
   }, []);
 
   useEffect(() => {
-    const btn = document.querySelector('.fc-custom-btn-button')!;
-    btn.textContent = 'Custom Trackers';
-    btn.addEventListener('click', () => {
+    const btns = document.querySelectorAll('.fc-custom-btn-button')!;
+
+    const customTrackersBtn = btns[0]!;
+    customTrackersBtn.textContent = 'Custom Trackers';
+    customTrackersBtn.addEventListener('click', () => {
       new Modal(customTrackersModal.current).show();
+    });
+
+    const logoutBtn = btns[1]!;
+    logoutBtn.textContent = 'Logout';
+    logoutBtn.addEventListener('click', () => {
+      setLoading(true);
+      setTimeout(async () => {
+        await supabase.auth.signOut();
+        navigate('/login');
+      }, 1000);
     });
   }, []);
 
@@ -157,7 +171,7 @@ const Home = () => {
     const color = colors[rating - 1];
     (entryModal.current!.querySelector('.modal-header')! as HTMLElement).style.backgroundColor = color;
     entryModalRatingInput.current!.style.setProperty('--current-rating-color', color);
-    (entryModalRatingInput.current!.parentElement!.querySelector('span.thumb')! as HTMLSpanElement).style.setProperty('--current-rating-color', color);
+    // (entryModalRatingInput.current!.parentElement!.querySelector('span.thumb')! as HTMLSpanElement).style.setProperty('--current-rating-color', color);
   }
 
   const handleDateSelect = (selectInfo: any) => {
@@ -505,7 +519,7 @@ const Home = () => {
         headerToolbar={{
           left: 'prevYear,prev,next,nextYear',
           center: 'title',
-          right: 'today,custom-btn'
+          right: 'today,custom-btn,custom-btn'
         }}
         weekends={ true }
         initialView="dayGridMonth"
