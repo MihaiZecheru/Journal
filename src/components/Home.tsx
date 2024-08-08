@@ -80,6 +80,7 @@ const Home = () => {
   const entryModalRatingInput = useRef<HTMLInputElement>(null);
   const entryModalTextArea = useRef<HTMLTextAreaElement>(null);
   const hoursSleptInput = useRef<HTMLInputElement>(null);
+  const dayRatingDisplayNumber = useRef<HTMLSpanElement>(null);
 
   // Custom Trackers
   const customTrackersModal = useRef<HTMLDivElement>(null);
@@ -177,6 +178,7 @@ const Home = () => {
 
     // rating colors
     entryModalRatingInput.current!.value = '5';
+    dayRatingDisplayNumber.current!.textContent = 'x';
     setModalColor(11); // gray
     
     // Clear text area
@@ -240,6 +242,7 @@ const Home = () => {
 
       // Set modal color
       entryModalRatingInput.current!.value = (existingRating === 11 ? 5 : existingRating).toString();
+      dayRatingDisplayNumber.current!.textContent = existingRating === 11 ? 'x' : existingRating.toString();
       setModalColor(existingRating);
 
       // Show delete button
@@ -362,6 +365,7 @@ const Home = () => {
 
   const onRatingRangeChange = (e: any) => {
     setModalColor(e.target.value);
+    dayRatingDisplayNumber.current!.textContent = e.target.value;
   };
 
   const entryModalInputKeyHandler = (e: any) => {
@@ -526,14 +530,18 @@ const Home = () => {
                 <label className="form-label" htmlFor="textAreaExample" ref={ entryModalLabel }></label>
               </div>
               <div>
-                <label className="form-label d-flex align-items-center" htmlFor="customRange2">
-                  <span className="me-2 no-highlight">Rate your day</span>
-                  <i className="fas fa-xmark fa-lg pointer-cursor" onClick={
-                    () => {
-                      entryModalRatingInput.current!.value = '5';
-                      setModalColor(11);
-                    }
-                  }></i>
+                <label className="form-label d-flex align-items-center justify-content-between" htmlFor="customRange2">
+                  <div className="d-flex align-items-center">
+                    <span className="me-2 no-highlight">Rate your day</span>
+                    <i className="fas fa-xmark fa-lg pointer-cursor" onClick={
+                      () => {
+                        entryModalRatingInput.current!.value = '5';
+                        dayRatingDisplayNumber.current!.textContent = 'x';
+                        setModalColor(11);
+                      }
+                    }></i>
+                  </div>
+                  <b><span ref={ dayRatingDisplayNumber }>x</span> / 10</b>
                 </label>
                 <div className="range" data-mdb-range-init>
                   <input type="range" className="form-range" min="1" max="10" id="customRange2" ref={ entryModalRatingInput } onChange={ onRatingRangeChange } onKeyDown={ entryModalInputKeyHandler } />
