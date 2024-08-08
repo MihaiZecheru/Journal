@@ -171,7 +171,7 @@ const Home = () => {
     const color = colors[rating - 1];
     (entryModal.current!.querySelector('.modal-header')! as HTMLElement).style.backgroundColor = color;
     entryModalRatingInput.current!.style.setProperty('--current-rating-color', color);
-    // (entryModalRatingInput.current!.parentElement!.querySelector('span.thumb')! as HTMLSpanElement).style.setProperty('--current-rating-color', color);
+    (entryModalRatingInput.current!.parentElement!.querySelector('span.thumb')! as HTMLSpanElement)?.style.setProperty('--current-rating-color', color);
   }
 
   const handleDateSelect = (selectInfo: any) => {
