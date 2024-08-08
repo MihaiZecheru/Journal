@@ -99,6 +99,7 @@ const Home = () => {
   const viewEntryModalBody = useRef<HTMLDivElement>(null);
   const viewEntryModalTitle = useRef<HTMLHeadingElement>(null);
   const viewEntryModalHoursSleptArea = useRef<HTMLDivElement>(null);
+  const viewEntryModalRatingDisplay = useRef<HTMLSpanElement>(null);
 
   const [loading, setLoading] = useState<boolean>(true);
   const entries = useRef<Entry[]>([]);
@@ -202,6 +203,7 @@ const Home = () => {
     if (isMoreThanSixDaysAgo) {
       if (!existingEntry) return alert(`No entry exists for ${weekday}, ${month} ${date.getDate()}`);
       viewEntryModalTitle.current!.textContent = `${weekday}, ${month} ${date.getDate()}`;
+      viewEntryModalRatingDisplay.current!.textContent = existingEntry.rating === 11 ? 'x' : existingEntry.rating.toString();
       const color = colors[existingEntry.rating - 1];
 			viewEntryModal.current!.setAttribute('data-startStr', existingEntry.date);
       viewEntryModalTitle.current!.parentElement!.style.backgroundColor = color;
@@ -734,9 +736,12 @@ const Home = () => {
       <div className="modal fade" ref={ viewEntryModal } tabIndex={ -1 } aria-labelledby="view-entry-modal-label" aria-hidden="true" data-startStr="DYNAMICALLY ADDED">
         <div className="modal-dialog">
           <div className="modal-content">
-            <div className="modal-header">
+            <div className="modal-header d-flex justify-content-between align-items-center">
               <h5 className="modal-title" id="view-entry-modal-label" ref={ viewEntryModalTitle }>DYNAMIC TITLE</h5>
-              <button type="button" className="btn-close" data-mdb-ripple-init data-mdb-dismiss="modal" aria-label="Close"></button>
+              <div className="d-flex align-items-center">
+                <b><span ref={ viewEntryModalRatingDisplay }>x</span> / 10</b>
+                <button type="button" className="btn-close ms-2 d-flex align-items-center" data-mdb-ripple-init data-mdb-dismiss="modal" aria-label="Close" style={{ marginLeft: 0 }}></button>
+              </div>
             </div>
             <div className="modal-body" ref={ viewEntryModalBody }>DYNAMIC BODY</div>
             <div className="modal-footer d-flex justify-content-between align-items-center">
