@@ -582,7 +582,10 @@ const Home = () => {
             </div>
             <div className="modal-footer">
               <button type="button" className="btn btn-secondary" data-mdb-ripple-init data-mdb-dismiss="modal">Close</button>
-              <button type="button" className="btn btn-danger visually-hidden" data-mdb-ripple-init onClick={ () => entryModalDelete(entryModal.current!.getAttribute('data-startStr')!) }>Delete</button>
+              <button type="button" className="btn btn-danger visually-hidden" data-mdb-ripple-init onClick={ () => {
+                const proceed = window.confirm('Are you sure you want to delete this entry?');
+                if (proceed) entryModalDelete(entryModal.current!.getAttribute('data-startStr')!);
+              }}>Delete</button>
               <button type="button" className="btn btn-success save-button" data-mdb-ripple-init data-mdb-dismiss="modal" onClick={ entryModalSave }>Save</button>
             </div>
           </div>
@@ -747,7 +750,10 @@ const Home = () => {
             <div className="modal-footer d-flex justify-content-between align-items-center">
               <div ref={ viewEntryModalHoursSleptArea }></div>
               <div>
-                <button type="button" className="btn btn-danger me-2" data-mdb-ripple-init data-mdb-dismiss="modal" onClick={ () => entryModalDelete(viewEntryModal.current!.getAttribute('data-startStr')!) }>Delete</button>
+                <button type="button" className="btn btn-danger me-2" data-mdb-ripple-init data-mdb-dismiss="modal" onClick={() => {
+                  const proceed = window.confirm('Are you sure you want to delete this entry?');
+                  if (proceed) entryModalDelete(viewEntryModal.current!.getAttribute('data-startStr')!);
+                }}>Delete</button>
                 <button type="button" className="btn btn-secondary" data-mdb-ripple-init data-mdb-dismiss="modal">Close</button>
               </div>
             </div>
