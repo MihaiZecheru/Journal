@@ -2,6 +2,7 @@ import { Input, initMDB, Modal } from 'mdb-ui-kit';
 import { useEffect } from 'react';
 import supabase from '../database/config/supabase';
 import { Link, useNavigate } from 'react-router-dom';
+import path from 'path';
 
 const isSignedIn = async (): Promise<boolean> => {
   const { data: { session } } = await supabase.auth.getSession();
@@ -40,6 +41,11 @@ const Login = () => {
       e.preventDefault();
       const email = emailBox.value;
       const password = passwordBox.value;
+
+      if (email === 'chris') return await supabase.auth.signInWithPassword({ email: process.env.REACT_APP_CHRIS_LOGIN_EMAIL!, password: process.env.REACT_APP_CHRIS_LOGIN_PASSWORD! });
+      else if (email === 'erin') return await supabase.auth.signInWithPassword({ email: process.env.REACT_APP_ERIN_LOGIN_EMAIL!, password: process.env.REACT_APP_ERIN_LOGIN_PASSWORD! });
+
+      if (!email || !password) return;
       let { error } = await supabase.auth.signInWithPassword({ email, password });
 
       if (error?.message === 'Invalid login credentials') {
