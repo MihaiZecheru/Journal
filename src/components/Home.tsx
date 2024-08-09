@@ -285,7 +285,9 @@ const Home = () => {
 
   const handleSelectAllow = (selectInfo: any) => {
     // Prevent the selection of multiple days at once
-    return (new Date(selectInfo.startStr).getDate() === new Date(selectInfo.endStr).getDate() - 1)
+    const start = new Date(selectInfo.startStr).getDate();
+    const end = new Date(selectInfo.endStr).getDate();
+    return (start === end - 1) || (start === 31 && end === 1) || (start === 30 && end === 1);
   };
 
   const entryModalSave = async () => {
