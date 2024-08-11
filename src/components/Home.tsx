@@ -1,4 +1,7 @@
 import '../styles/home.css';
+import "primereact/resources/themes/lara-light-cyan/theme.css";
+import { FileUpload } from 'primereact/fileupload';
+import { PrimeReactProvider } from 'primereact/api';
 import FullCalendar from '@fullcalendar/react';
 import dayGridMonth from '@fullcalendar/daygrid';
 import interactionPlugin from '@fullcalendar/interaction';
@@ -12,6 +15,7 @@ import TDateString from '../database/TDateString';
 import CustomTracker, { TCustomTrackerTypeField } from '../database/CustomTracker';
 import icons from '../icons';
 import { useNavigate } from 'react-router-dom';
+import fileDownload from 'js-file-download'
 
 function mobileCheck() {
   let check = false;
@@ -27,6 +31,7 @@ function GetTodaysDate(): TDateString {
   return `${year}-${month}-${day}`;
 }
 
+const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const colors = ['#FF0000', '#FF3300', '#FF6600', '#FF9900', '#FFCC00', '#FFFF00', '#CCFF00', '#99FF00', '#66FF00', '#33FF00', '#bdbdbd']; // gray at the end
 
@@ -74,6 +79,7 @@ function loadCalendar(entries: Entry[], calendarAPI: any) {
 const Home = () => {
   const navigate = useNavigate();
   const calendar = useRef<FullCalendar>(null);
+  const [viewMemoriesModalFiles, setViewMemoriesModalFiles] = useState<{ name: string, url: string, date: string}[]>([]);
 
   // Entry modal
   const entryModal = useRef<HTMLDivElement>(null);
@@ -83,6 +89,7 @@ const Home = () => {
   const entryModalTextArea = useRef<HTMLTextAreaElement>(null);
   const hoursSleptInput = useRef<HTMLInputElement>(null);
   const dayRatingDisplayNumber = useRef<HTMLSpanElement>(null);
+  const fileUploadComponent = useRef<FileUpload>(null);
 
   // Custom Trackers
   const customTrackersModal = useRef<HTMLDivElement>(null);
@@ -102,6 +109,16 @@ const Home = () => {
   const viewEntryModalTitle = useRef<HTMLHeadingElement>(null);
   const viewEntryModalHoursSleptArea = useRef<HTMLDivElement>(null);
   const viewEntryModalRatingDisplay = useRef<HTMLSpanElement>(null);
+
+  // View memories modal
+  const viewMemoriesModal = useRef<HTMLDivElement>(null);
+  const viewMemoriesModalBody = useRef<HTMLDivElement>(null);
+  const viewMemoriesModalDateDisplay = useRef<HTMLSpanElement>(null);
+
+  // View entry memories modal
+  const viewEntryMemoriesModal = useRef<HTMLDivElement>(null);
+  const viewEntryMemoriesModalBody = useRef<HTMLDivElement>(null);
+  const viewEntryMemoriesModalDateDisplay = useRef<HTMLSpanElement>(null);
 
   const [loading, setLoading] = useState<boolean>(true);
   const entries = useRef<Entry[]>([]);
@@ -223,7 +240,7 @@ const Home = () => {
       viewEntryModalTitle.current!.parentElement!.style.backgroundColor = color;
       viewEntryModalBody.current!.innerHTML = `
         <div class="mb-2 view-entry-text-content-box"><span>${existingEntry.journal_entry}</span></div>
-        <div>
+        <div class="mb-2">
           ${
             existingEntry.custom_trackers ? customTrackers.map((custom_tracker: CustomTracker) => {
               const value = existingEntry.custom_trackers![custom_tracker.name];
@@ -240,6 +257,39 @@ const Home = () => {
       `;
 
       viewEntryModalHoursSleptArea.current!.innerHTML =  existingEntry.hours_slept ? `<div><span class="badge badge-info no-highlight br-5">${existingEntry.hours_slept} hours slept</span></div>` : '';
+
+      (async () => {
+        const userID = await GetUserID();
+
+        const { data, error } = await supabase.storage
+          .from('Memories')
+          .list(`${userID}/${existingEntry.date}`);
+
+        if (error) {
+          console.error(`Error listing files: ${error.message}`);
+          throw error;
+        }
+
+        if (!data.length) setViewMemoriesModalFiles([]);
+        else {
+          const { data: urls, error: urls_error } = await supabase.storage
+            .from('Memories')
+            .createSignedUrls(data.map((file: any) => `${userID}/${existingEntry.date}/${file.name}`), 3600 * 24 * 7);
+
+          if (urls_error) {
+            console.error(`Error getting signed URLs: ${urls_error.message}`);
+            throw urls_error;
+          }
+
+          setViewMemoriesModalFiles(urls.map((url: { signedUrl: string }, index: number) => {
+            return {
+              name: data[index].name,
+              url: url.signedUrl,
+              date: existingEntry.date
+            };
+          }));
+        }
+      })();
 
       return new Modal(viewEntryModal.current).show();
     // Show create/edit entry modal
@@ -278,8 +328,45 @@ const Home = () => {
           }
         });
       }
-      
-      new Modal(entryModal.current).show()
+
+      // Clear file upload component of old files
+      fileUploadComponent.current!.clear();
+
+      (async () => {
+        const userID = await GetUserID();
+
+        const { data, error } = await supabase.storage
+          .from('Memories')
+          .list(`${userID}/${existingEntry.date}`);
+
+        if (error) {
+          console.error(`Error listing files: ${error.message}`);
+          throw error;
+        }
+
+        if (!data.length) setViewMemoriesModalFiles([]);
+        else {
+          const { data: urls, error: urls_error } = await supabase.storage
+            .from('Memories')
+            .createSignedUrls(data.map((file: any) => `${userID}/${existingEntry.date}/${file.name}`), 3600 * 24 * 7);
+
+          if (urls_error) {
+            console.error(`Error getting signed URLs: ${urls_error.message}`);
+            throw urls_error;
+          }
+
+          setViewMemoriesModalFiles(urls.map((url: { signedUrl: string }, index: number) => {
+            return {
+              name: data[index].name,
+              url: url.signedUrl,
+              date: existingEntry.date
+            };
+          }));
+        }
+      })();
+
+      // Show modal
+      new Modal(entryModal.current).show();
     }
   };
 
@@ -287,7 +374,8 @@ const Home = () => {
     // Prevent the selection of multiple days at once
     const start = new Date(selectInfo.startStr).getDate();
     const end = new Date(selectInfo.endStr).getDate();
-    return (start === end - 1) || (start === 31 && end === 1) || (start === 30 && end === 1);
+    const dateIsInTheFuture = new Date(selectInfo.endStr) > new Date();
+    return ((start === end - 1) || (start === 31 && end === 1) || (start === 30 && end === 1)) && !dateIsInTheFuture;
   };
 
   const entryModalSave = async () => {
@@ -396,17 +484,22 @@ const Home = () => {
   const entryModalDelete = async (startStr: string) => {
     const existingEntry: Entry | null = entries.current.find((entry: Entry) => entry.date === startStr) || null;
     if (!existingEntry) return;
+    const userID = await GetUserID();
 
+    // Remove the entry from the DB
     const { error } = await supabase
       .from('Entries')
       .delete()
       .eq('date', startStr)
-      .eq('user_id', await GetUserID());
+      .eq('user_id', userID);
 
     if (error) {
       console.error(`Error deleting entry: ${error.message}`);
       throw error;
     }
+
+    // Remove the associated images from the storage
+    deleteAllMemories(startStr);
 
     // Remove the existing event from the calendar
     const event = calendar.current!.getApi().getEvents().find((event: any) => event.startStr === startStr)!;
@@ -514,6 +607,118 @@ const Home = () => {
     setCustomTrackers(sort_custom_trackers(customTrackers.map((tracker: CustomTracker) => tracker.name === custom_tracker_name ? { ...tracker, icon_classname } : tracker)));
   };
 
+  const fileUploadHandler = (e: any) => {
+    try {
+      let errorToThrow;
+      e.files.forEach(async (file: any) => {
+        // Upload the file to the user's folder
+        // A subfolder is made for each date
+        const { error } = await supabase.storage
+          .from('Memories')
+          .upload(`${await GetUserID()}/${entryModal.current!.getAttribute('data-startStr')!}/${file.name}`, file);
+          
+        if (error) {
+          console.error(`Error uploading file: ${error.message}`);
+          if (error.message === 'The resource already exists')
+            alert(`A file with the name '${file.name}' already exists`);
+          else errorToThrow = error;
+        }
+
+        
+        fileUploadComponent.current!.setFiles(fileUploadComponent.current!.getFiles().filter((f: any) => f !== file).sort((a: any, b: any) => a.size - b.size));
+        fileUploadComponent.current!.setUploadedFiles(fileUploadComponent.current!.getUploadedFiles().concat(file).sort((a: any, b: any) => a.size - b.size));
+      });
+      
+      setViewMemoriesModalFiles(viewMemoriesModalFiles.concat(e.files.map((file: any) => ({ name: file.name, url: URL.createObjectURL(file), date: entryModal.current!.getAttribute('data-startStr')! }))));
+      if (errorToThrow) throw errorToThrow;
+    } catch (error: any) {
+      console.error(`Error uploading file: ${error.message}`);
+    }
+  };
+
+  // Remove a single file from the database's storage
+  const removeFileFromMemoriesModal = async (date: string, fileName: string) => {
+    const userID = await GetUserID();
+    
+    const { error } = await supabase.storage
+      .from('Memories')
+      .remove([`${userID}/${date}/${fileName}`]);
+
+    if (error) {
+      console.error(`Error removing file: ${error.message}`);
+      throw error;
+    }
+
+    setViewMemoriesModalFiles(viewMemoriesModalFiles.filter((file: { name: string }) => file.name !== fileName));
+  };
+
+  // Delete all memories for a specific date
+  const deleteAllMemories = async (date: string) => {
+    const userID = await GetUserID();
+
+    // List all files
+    const { data, error: listError } = await supabase.storage
+    .from('Memories')
+    .list(`${userID}/${date}`, { limit: 10_000 });
+
+    if (listError) {
+      console.error(`Error listing files: ${listError.message}`);
+      throw listError;
+    }
+
+    if (!data.length) return;
+    const pathsToDelete = data.map((file) => `${userID}/${date}/${file.name}`);
+
+    // Remove all files
+    const { error } = await supabase.storage
+      .from('Memories')
+      .remove(pathsToDelete);
+
+    if (error) {
+      console.error(`Error removing file: ${error.message}`);
+      throw error;
+    }
+
+    setViewMemoriesModalFiles([]);
+  };
+
+  const setupViewMemoriesModal = async (date: string) => {
+    const userID = await GetUserID();
+    const dateString = `${months[parseInt(date.split('-')[1]) - 1]} ${date.split('-')[2]}, ${date.substring(0, 4)}`;
+    viewMemoriesModalDateDisplay.current!.textContent = dateString;
+
+    // Get all files
+    const { data, error } = await supabase.storage
+      .from('Memories')
+      .list(`${userID}/${date}`, { limit: 10_000 });
+
+    if (error) {
+      console.error(`Error listing files: ${error.message}`);
+      throw error;
+    }
+
+    if (!data.length) {
+      setViewMemoriesModalFiles([]);
+    } else {
+      const { data: urls, error: urls_error } = await supabase.storage
+        .from('Memories')
+        .createSignedUrls(data.map((file: any) => `${userID}/${date}/${file.name}`), 3600 * 24 * 7);
+
+      if (urls_error) {
+        console.error(`Error getting signed URLs: ${urls_error.message}`);
+        throw urls_error;
+      }
+
+      setViewMemoriesModalFiles(urls.map((url: { signedUrl: string }, index: number) => {
+        return {
+          name: data[index].name,
+          url: url.signedUrl,
+          date
+        };
+      }));
+    }
+  };
+
   return (
     <div className="home">
       { loading && <Loading /> }
@@ -521,7 +726,7 @@ const Home = () => {
         headerToolbar={{
           left: 'prevYear,prev,next,nextYear',
           center: 'title',
-          right: 'today,custom-btn,custom-btn'
+          right: 'custom-btn,custom-btn'
         }}
         weekends={ true }
         initialView="dayGridMonth"
@@ -596,9 +801,42 @@ const Home = () => {
                 }
               </div>
             </div>
+            
+            <PrimeReactProvider>
+              <FileUpload
+                accept="image/*"
+                auto={ false }
+                maxFileSize={ 10_485_760 } // 10MB
+                multiple
+                name="fileUpload[]"
+                chooseLabel="Add Memories"
+                emptyTemplate={ <p className="m-0">Drag and drop files here</p> }
+                customUpload={ true }
+                uploadHandler={ fileUploadHandler }
+                ref={ fileUploadComponent }
+                onSelect={ (e) => fileUploadComponent.current!.setFiles(e.files.sort((a: any, b: any) => a.size - b.size)) } // sort selected files by size
+              />
+            </PrimeReactProvider>
+
+            <div className="d-flex align-items-center justify-content-center m-2">
+              <button type="button" className="btn btn-secondary me-2 w-50" data-mdb-ripple-init onClick={ async () => {
+                  const date = entryModal.current!.getAttribute('data-startStr')!;
+                  await setupViewMemoriesModal(date);
+                  new Modal(viewMemoriesModal.current!).show();
+                }}><span>Show Memories</span><span className="badge rounded-pill badge-dark ms-2">{ viewMemoriesModalFiles.length }</span>
+              </button>
+              <button type="button" className="btn btn-secondary w-50" data-mdb-ripple-init onClick={ async () => {
+                const date = entryModal.current!.getAttribute('data-startStr')!;
+                const proceed = window.confirm(`Are you sure you want to delete all memories for ${date}?`);
+                if (!proceed) return;
+                await deleteAllMemories(date);
+                alert(`All memories for ${date} have been deleted`);
+              }}>Delete All Memories</button>
+            </div>
+
             <div className="modal-footer">
               <button type="button" className="btn btn-secondary" data-mdb-ripple-init data-mdb-dismiss="modal">Close</button>
-              <button type="button" className="btn btn-danger visually-hidden" data-mdb-ripple-init onClick={ () => {
+              <button type="button" className="btn btn-danger visually-hidden" data-mdb-ripple-init data-mdb-dismiss="modal" onClick={ () => {
                 const proceed = window.confirm('Are you sure you want to delete this entry?');
                 if (proceed) entryModalDelete(entryModal.current!.getAttribute('data-startStr')!);
               }}>Delete</button>
@@ -752,7 +990,7 @@ const Home = () => {
         </div>
       </div>
 
-      <div className="modal fade" ref={ viewEntryModal } tabIndex={ -1 } aria-labelledby="view-entry-modal-label" aria-hidden="true" data-startStr="DYNAMICALLY ADDED">
+      <div className="modal fade modal" ref={ viewEntryModal } tabIndex={ -1 } aria-labelledby="view-entry-modal-label" aria-hidden="true" data-startStr="DYNAMICALLY ADDED">
         <div className="modal-dialog">
           <div className="modal-content">
             <div className="modal-header d-flex justify-content-between align-items-center">
@@ -762,16 +1000,87 @@ const Home = () => {
                 <button type="button" className="btn-close ms-2 d-flex align-items-center" data-mdb-ripple-init data-mdb-dismiss="modal" aria-label="Close" style={{ marginLeft: 0 }}></button>
               </div>
             </div>
-            <div className="modal-body" ref={ viewEntryModalBody }>DYNAMIC BODY</div>
+            <div className="modal-body" ref={ viewEntryModalBody }>
+
+            </div>
             <div className="modal-footer d-flex justify-content-between align-items-center">
               <div ref={ viewEntryModalHoursSleptArea }></div>
               <div>
+                <button type="button" className="btn btn-secondary me-2" data-mdb-ripple-init onClick={ async () => {
+                  const date = viewEntryModal.current!.getAttribute('data-startStr')!;
+                  await setupViewMemoriesModal(date);
+                  viewEntryMemoriesModalDateDisplay.current!.textContent = `${months[parseInt(date.split('-')[1]) - 1]} ${date.split('-')[2]}, ${date.substring(0, 4)}`;
+                  new Modal(viewEntryMemoriesModal.current!).show();
+                }}><span>View Memories</span><span className="badge rounded-pill badge-dark ms-2">{ viewMemoriesModalFiles.length }</span></button>
                 <button type="button" className="btn btn-danger me-2" data-mdb-ripple-init data-mdb-dismiss="modal" onClick={() => {
                   const proceed = window.confirm('Are you sure you want to delete this entry?');
                   if (proceed) entryModalDelete(viewEntryModal.current!.getAttribute('data-startStr')!);
                 }}>Delete</button>
                 <button type="button" className="btn btn-secondary" data-mdb-ripple-init data-mdb-dismiss="modal">Close</button>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal fade modal-xl" ref={ viewEntryMemoriesModal } tabIndex={ -1 } aria-labelledby="view-memories-modal-label" aria-hidden="true">
+        <div className="modal-dialog">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h5 className="modal-title" id="view-memories-modal-label">Memories - <span ref={ viewEntryMemoriesModalDateDisplay }>DYNAMICALLY ADDED</span></h5>
+              <button type="button" className="btn-close" data-mdb-ripple-init data-mdb-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div className="modal-body d-flex justify-content-center align-items-center" ref={ viewEntryMemoriesModalBody }>
+              { viewMemoriesModalFiles.length === 0 && <div className="text-center">No memories saved</div> }
+              { viewMemoriesModalFiles.length > 0 &&
+                <div className="image-grid" style={{ "gridTemplateColumns": `repeat(${viewMemoriesModalFiles.length > 3 ? 3 : viewMemoriesModalFiles.length}, 1fr)` }}>
+                  {
+                    viewMemoriesModalFiles.map((file: { name: string, url: string, date: string }) => {
+                      return (
+                        <a href={ file.url } target="_blank"><img src={ file.url } alt={ file.name } className="img-thumbnail no-highlight" /></a>
+                      );
+                    })
+                  }
+                </div>
+              }
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-secondary" data-mdb-ripple-init data-mdb-dismiss="modal">Close</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal fade" ref={ viewMemoriesModal } tabIndex={ -1 } aria-labelledby="view-memories-modal-label" aria-hidden="true">
+        <div className="modal-dialog">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h5 className="modal-title" id="view-memories-modal-label">Memories - <span ref={ viewMemoriesModalDateDisplay }>DYNAMICALLY ADDED</span></h5>
+              <button type="button" className="btn-close" data-mdb-ripple-init data-mdb-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div className="modal-body" ref={ viewMemoriesModalBody }>
+              { viewMemoriesModalFiles.length === 0 && <div className="text-center">No memories saved</div> }
+              { viewMemoriesModalFiles.length > 0 &&
+                viewMemoriesModalFiles.map((file: { name: string, url: string, date: string }) => {
+                  return (
+                    <div className="d-flex justify-content-between align-items-center mb-2">
+                      <div className="d-flex align-items-center">
+                        <img src={ file.url } alt={ file.name } className="img-thumbnail no-highlight" />
+                        <a href={ file.url} target="_blank" className="text-decoration-none btn-primary">{ file.name }</a>
+                      </div>
+                      <div className="d-flex align-items-center">
+                        <button className="btn btn-floating btn-secondary btn-sm me-2 " type="button" style={{ color: "var(--mdb-primary)" }} onClick={ async () => fileDownload(await fetch(file.url).then(res => res.blob()), file.name) }>
+                          <i className="fas fa-download"></i>
+                        </button>
+                        <button className="btn btn-danger btn-sm" onClick={ () => removeFileFromMemoriesModal(file.date, file.name) }>Remove</button>
+                      </div>
+                    </div>
+                  );
+                })
+              }
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-secondary" data-mdb-ripple-init data-mdb-dismiss="modal">Close</button>
             </div>
           </div>
         </div>

@@ -154,3 +154,52 @@ label[for="customRange2"] {
   padding: .5rem;
   border-radius: .5rem;
 }
+
+.p-button {
+  border-radius: .5rem;
+}
+
+.p-fileupload-buttonbar span.p-button.p-fileupload-choose {
+  margin-right: 0;
+}
+
+.p-fileupload-highlight {
+  border: 2px dashed #3f51b5;
+  background-color: #e3f2fd;
+}
+
+.p-fileupload-buttonbar {
+  display: flex;
+  justify-content: space-between;
+}
+
+.image-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  width: 90%;
+  max-width: 800px;
+}
+
+.image-item img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 8px;
+}
+
+.img-thumbnail {
+  border-radius: .5rem;
+  width: 50px;
+  margin-right: .5rem;
+}
+
+.image-grid {
+  display: grid;
+  gap: 1rem;
+}
+.image-grid img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
