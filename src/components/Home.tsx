@@ -102,6 +102,7 @@ const Home = () => {
   const addCustomTrackerType = useRef<HTMLInputElement>(null);
   const addCustomTrackerName = useRef<HTMLInputElement>(null);
   const setCustomTrackerIconModal = useRef<HTMLDivElement>(null);
+  const iconsGrid = useRef<HTMLDivElement>(null);
 
   // View entry modal
   const viewEntryModal = useRef<HTMLDivElement>(null);
@@ -246,7 +247,7 @@ const Home = () => {
               const value = existingEntry.custom_trackers![custom_tracker.name];
               const isCheckbox = value === true || value === false;
               if (isCheckbox) {
-                return `<div class="d-flex align-items-center mt-2"><i class="fa-lg me-2 ${value === true ? 'active-custom-tracker-color' : ''} ${customTrackers.find((tracker: CustomTracker) => tracker.name === custom_tracker.name)!.icon_classname}"></i><span>${custom_tracker.name}</span></div>`;
+                return `<div class="d-flex align-items-center mt-2"><i class="fa-lg me-2 ${value === true ? 'active-custom-tracker-color' : ''} ${customTrackers.find((tracker: CustomTracker) => tracker.name === custom_tracker.name)?.icon_classname}"></i><span>${custom_tracker.name}</span></div>`;
               } else {
                 if (value === '' || !value || value === null) return '';
                 return `<div class="mt-2 d-flex align-items-center view-entry-text-content-box"><span class="active-custom-tracker-color">${custom_tracker.name}:</span><span> ${value}</span></div>`;
@@ -579,7 +580,7 @@ const Home = () => {
               const type = value === true || value === false ? 'checkbox' : 'text';
               if (type !== 'checkbox' || value === false) return '';
               if (!customTrackers.length) return '';
-              const icon_classname = customTrackers.find((tracker: CustomTracker) => tracker.name === key)!.icon_classname;
+              const icon_classname = customTrackers.find((tracker: CustomTracker) => tracker.name === key)?.icon_classname;
               const trackerIcon = <i className={ "fa-lg " + icon_classname }></i>;
               return <div className="calendar-event-custom-tracker ms-1 mt-1" key={ key }>{ trackerIcon }</div>
             })
@@ -717,6 +718,17 @@ const Home = () => {
         };
       }));
     }
+  };
+
+  const performIconSearch = (q: string) => {
+    console.log(q);
+    const grid_icons = iconsGrid.current!.querySelectorAll('i');
+    grid_icons.forEach((icon: Element) => {
+      console.log(icon);
+      const icon_name = icon.getAttribute('data-icon-class-string')!;
+      if (icon_name.includes(q)) icon.classList.remove('d-none');
+      else icon.classList.add('d-none');
+    });
   };
 
   return (
@@ -950,11 +962,13 @@ const Home = () => {
               <div className="d-flex align-items-center">
                 <div className="form-outline w-75" data-mdb-input-init>
                   <i className="fas fa-magnifying-glass trailing"></i>
-                  <input type="text" id="icon-search" className="form-control form-icon-trailing" />
+                  <input type="text" id="icon-search" className="form-control form-icon-trailing" onKeyDown={ (e) => {
+                      if (e.key === 'Enter') performIconSearch((e.target as HTMLInputElement).value.trim());
+                    }} />
                   <label className="form-label" htmlFor="icon-search">Search</label>
                 </div>
               </div>
-              <div className="icons-grid pt-4">
+              <div className="icons-grid pt-4" ref={ iconsGrid }>
                 {
                   icons.map((icon: string) => {
                     const iconSlot = document.getElementById('save-btn-icon-slot') as HTMLDivElement;
