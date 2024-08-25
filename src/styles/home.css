@@ -204,6 +204,10 @@ label[for="customRange2"] {
   display: block;
 }
 
+.p-button {
+  height: 2.75rem;
+}
+
 @media screen and (max-width: 500px) {
   .p-button {
     width: 100%;
