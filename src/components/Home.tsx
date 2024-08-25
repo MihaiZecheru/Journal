@@ -123,6 +123,7 @@ const Home = () => {
 
   const [loading, setLoading] = useState<boolean>(true);
   const [landscape, setLandscape] = useState<boolean>(false);
+  const [editMode, setEditMode] = useState<boolean>(false);
   const entries = useRef<Entry[]>([]);
 
   useEffect(() => {
@@ -182,7 +183,11 @@ const Home = () => {
       new Modal(customTrackersModal.current).show();
     });
 
-    const logoutBtn = btns[1]!;
+    const editModeBtn = btns[1]!;
+    editModeBtn.textContent = 'Edit Mode';
+    editModeBtn.addEventListener('click', () => setEditMode(prevEditMode => !prevEditMode));
+
+    const logoutBtn = btns[2]!;
     logoutBtn.textContent = 'Logout';
     logoutBtn.addEventListener('click', () => {
       setLoading(true);
@@ -192,6 +197,11 @@ const Home = () => {
       }, 1000);
     });
   }, []);
+
+  useEffect(() => {
+    const editModeBtn = document.querySelectorAll('.fc-custom-btn-button')![1] as HTMLButtonElement;
+    editModeBtn.innerHTML = (editMode ? '<i class="fas fa-check me-2"></i>' : '<i class="fas fa-xmark me-2"></i>') + 'Edit Mode';
+  }, [editMode]);
 
   useEffect(() => {
     customTrackersModalBody.current!.querySelectorAll('.custom-tracker-input').forEach((input: Element) => new Input(input));
@@ -235,7 +245,7 @@ const Home = () => {
     // Set modal title
     entryModalTitle.current!.textContent = `${weekday}, ${month} ${date.getDate()}`;
     entryModalLabel.current!.textContent = date.getDate() === new Date().getDate() ? 'What happened today?' : (date.getDate() === new Date().getDate() - 1) ? `What happened yesterday?` : `What happened on ${weekday}?`;
-    entryModal.current!.setAttribute('data-startStr', selectInfo.startStr);
+    entryModal.current!.setAttribute('data-startstr', selectInfo.startStr);
 
     // Hide delete button
     (entryModal.current!.querySelector('.btn-danger') as HTMLButtonElement).classList.add('visually-hidden');
@@ -244,12 +254,12 @@ const Home = () => {
     const existingEntry: Entry | null = entries.current.find((entry: Entry) => entry.date === date.toISOString().split('T')[0]) || null;
 
     // Show view modal
-    if (isMoreThanSixDaysAgo) {
+    if (isMoreThanSixDaysAgo && editMode === false) {
       if (!existingEntry) return alert(`No entry exists for ${weekday}, ${month} ${date.getDate()}`);
       viewEntryModalTitle.current!.textContent = `${weekday}, ${month} ${date.getDate()}`;
       viewEntryModalRatingDisplay.current!.textContent = existingEntry.rating === 11 ? 'x' : existingEntry.rating.toString();
       const color = colors[existingEntry.rating - 1];
-			viewEntryModal.current!.setAttribute('data-startStr', existingEntry.date);
+			viewEntryModal.current!.setAttribute('data-startstr', existingEntry.date);
       viewEntryModalTitle.current!.parentElement!.style.backgroundColor = color;
       viewEntryModalBody.current!.innerHTML = `
         <div class="mb-2 view-entry-text-content-box"><span>${existingEntry.journal_entry}</span></div>
@@ -387,14 +397,20 @@ const Home = () => {
     // Prevent the selection of multiple days at once
     const start = new Date(selectInfo.startStr).getDate();
     const end = new Date(selectInfo.endStr).getDate();
-    const dateIsInTheFuture = new Date(selectInfo.endStr) > new Date();
+    // Note: this uses startStr because the startStr is always 1 day behind the endStr,
+    // and when selecting the current day, this will allow for the current date to be selected.
+    // if endStr were used instread, the current date would not be selectable; it would be
+    // considered to be "in the future"
+    const dateIsInTheFuture = new Date(selectInfo.startStr) > new Date();
     return ((start === end - 1) || (start === 31 && end === 1) || (start === 30 && end === 1)) && !dateIsInTheFuture;
   };
 
   const entryModalSave = async () => {
-    const startStr = entryModal.current!.getAttribute('data-startStr')!;
+    const startStr = entryModal.current!.getAttribute('data-startstr')!;
     const text = entryModalTextArea.current!.value.trim();
     let rating = parseInt(entryModalRatingInput.current!.value);
+    
+    if (/^\d\.$/.test(hoursSleptInput.current!.value)) hoursSleptInput.current!.value = hoursSleptInput.current!.value + '0';
     const hoursSlept = parseFloat(hoursSleptInput.current!.value);
 
     // Get custom trackers
@@ -628,7 +644,7 @@ const Home = () => {
         // A subfolder is made for each date
         const { error } = await supabase.storage
           .from('Memories')
-          .upload(`${await GetUserID()}/${entryModal.current!.getAttribute('data-startStr')!}/${file.name}`, file);
+          .upload(`${await GetUserID()}/${entryModal.current!.getAttribute('data-startstr')!}/${file.name}`, file);
           
         if (error) {
           console.error(`Error uploading file: ${error.message}`);
@@ -642,7 +658,7 @@ const Home = () => {
         fileUploadComponent.current!.setUploadedFiles(fileUploadComponent.current!.getUploadedFiles().concat(file).sort((a: any, b: any) => a.size - b.size));
       });
       
-      setViewMemoriesModalFiles(viewMemoriesModalFiles.concat(e.files.map((file: any) => ({ name: file.name, url: URL.createObjectURL(file), date: entryModal.current!.getAttribute('data-startStr')! }))));
+      setViewMemoriesModalFiles(viewMemoriesModalFiles.concat(e.files.map((file: any) => ({ name: file.name, url: URL.createObjectURL(file), date: entryModal.current!.getAttribute('data-startstr')! }))));
       if (errorToThrow) throw errorToThrow;
     } catch (error: any) {
       console.error(`Error uploading file: ${error.message}`);
@@ -744,6 +760,9 @@ const Home = () => {
   };
 
   useEffect(() => {
+    // Only check orientation on mobile
+    if (!document.body.classList.contains('mobile')) return;
+
     const calendar_ = document.querySelector('.fc') as HTMLDivElement;
     if (landscape) {
       calendar_.classList.remove('d-none');
@@ -817,8 +836,10 @@ const Home = () => {
                     if (e.target.value < 0) e.target.value = 0;
                     // eslint-disable-next-line eqeqeq
                     if (e.target.value == 0) e.target.value = '';
-                    const isFloat = parseFloat(e.target.value) !== parseInt(e.target.value);
-                    if (isFloat && parseFloat(e.target.value) - parseInt(e.target.value) !== 0.5) e.target.value = parseInt(e.target.value) + 0.5;
+                    if (/^\d\.$/.test(e.target.value)) return; // wait for next char
+
+                    const isFloat = parseFloat(e.target.value) != parseInt(e.target.value);
+                    if (isFloat && (parseFloat(e.target.value) - parseInt(e.target.value)) != 0.5) e.target.value = parseInt(e.target.value) + 0.5;
                   }}/>
                   <label className="form-label" htmlFor="hours-slept-input">Hours slept</label>
                 </div>
@@ -859,13 +880,13 @@ const Home = () => {
 
             <div className="d-flex align-items-center justify-content-center m-2">
               <button type="button" className="btn btn-secondary me-2 w-50" data-mdb-ripple-init onClick={ async () => {
-                  const date = entryModal.current!.getAttribute('data-startStr')!;
+                  const date = entryModal.current!.getAttribute('data-startstr')!;
                   await setupViewMemoriesModal(date);
                   new Modal(viewMemoriesModal.current!).show();
                 }}><span>Show Memories</span><span className="badge rounded-pill badge-dark ms-2">{ viewMemoriesModalFiles.length }</span>
               </button>
               <button type="button" className="btn btn-secondary w-50" data-mdb-ripple-init onClick={ async () => {
-                const date = entryModal.current!.getAttribute('data-startStr')!;
+                const date = entryModal.current!.getAttribute('data-startstr')!;
                 const proceed = window.confirm(`Are you sure you want to delete all memories for ${date}?`);
                 if (!proceed) return;
                 await deleteAllMemories(date);
@@ -877,7 +898,7 @@ const Home = () => {
               <button type="button" className="btn btn-secondary" data-mdb-ripple-init data-mdb-dismiss="modal">Close</button>
               <button type="button" className="btn btn-danger visually-hidden" data-mdb-ripple-init data-mdb-dismiss="modal" onClick={ () => {
                 const proceed = window.confirm('Are you sure you want to delete this entry?');
-                if (proceed) entryModalDelete(entryModal.current!.getAttribute('data-startStr')!);
+                if (proceed) entryModalDelete(entryModal.current!.getAttribute('data-startstr')!);
               }}>Delete</button>
               <button type="button" className="btn btn-success save-button" data-mdb-ripple-init data-mdb-dismiss="modal" onClick={ entryModalSave }>Save</button>
             </div>
@@ -1031,7 +1052,7 @@ const Home = () => {
         </div>
       </div>
 
-      <div className="modal fade modal" ref={ viewEntryModal } tabIndex={ -1 } aria-labelledby="view-entry-modal-label" aria-hidden="true" data-startStr="DYNAMICALLY ADDED">
+      <div className="modal fade modal" ref={ viewEntryModal } tabIndex={ -1 } aria-labelledby="view-entry-modal-label" aria-hidden="true" data-startstr="DYNAMICALLY ADDED">
         <div className="modal-dialog">
           <div className="modal-content">
             <div className="modal-header d-flex justify-content-between align-items-center">
@@ -1048,14 +1069,14 @@ const Home = () => {
               <div ref={ viewEntryModalHoursSleptArea }></div>
               <div>
                 <button type="button" className="btn btn-secondary me-2" data-mdb-ripple-init onClick={ async () => {
-                  const date = viewEntryModal.current!.getAttribute('data-startStr')!;
+                  const date = viewEntryModal.current!.getAttribute('data-startstr')!;
                   await setupViewMemoriesModal(date);
                   viewEntryMemoriesModalDateDisplay.current!.textContent = `${months[parseInt(date.split('-')[1]) - 1]} ${date.split('-')[2]}, ${date.substring(0, 4)}`;
                   new Modal(viewEntryMemoriesModal.current!).show();
                 }}><span>View Memories</span><span className="badge rounded-pill badge-dark ms-2">{ viewMemoriesModalFiles.length }</span></button>
                 <button type="button" className="btn btn-danger me-2" data-mdb-ripple-init data-mdb-dismiss="modal" onClick={() => {
                   const proceed = window.confirm('Are you sure you want to delete this entry?');
-                  if (proceed) entryModalDelete(viewEntryModal.current!.getAttribute('data-startStr')!);
+                  if (proceed) entryModalDelete(viewEntryModal.current!.getAttribute('data-startstr')!);
                 }}>Delete</button>
                 <button type="button" className="btn btn-secondary" data-mdb-ripple-init data-mdb-dismiss="modal">Close</button>
               </div>
