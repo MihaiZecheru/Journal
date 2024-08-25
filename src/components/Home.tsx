@@ -178,7 +178,7 @@ const Home = () => {
     const btns = document.querySelectorAll('.fc-custom-btn-button')!;
 
     const customTrackersBtn = btns[0]!;
-    customTrackersBtn.textContent = 'Custom Trackers';
+    customTrackersBtn.innerHTML = '<i class="far fa-square-check me-2"></i>Custom Trackers';
     customTrackersBtn.addEventListener('click', () => {
       new Modal(customTrackersModal.current).show();
     });
@@ -187,8 +187,14 @@ const Home = () => {
     editModeBtn.textContent = 'Edit Mode';
     editModeBtn.addEventListener('click', () => setEditMode(prevEditMode => !prevEditMode));
 
-    const logoutBtn = btns[2]!;
-    logoutBtn.textContent = 'Logout';
+    const searchBtn = btns[2]!;
+    searchBtn.innerHTML = '<i class="fas fa-magnifying-glass me-2"></i>Search';
+    searchBtn.addEventListener('click', () => {
+      navigate('/search');
+    });
+
+    const logoutBtn = btns[3]!;
+    logoutBtn.innerHTML = '<i class="far fa-user me-2"></i>Logout';;
     logoutBtn.addEventListener('click', () => {
       setLoading(true);
       setTimeout(async () => {
@@ -784,7 +790,7 @@ const Home = () => {
         headerToolbar={{
           left: 'prevYear,prev,next,nextYear',
           center: 'title',
-          right: 'custom-btn,custom-btn,custom-btn'
+          right: 'custom-btn,custom-btn,custom-btn,custom-btn'
         }}
         weekends={ true }
         initialView="dayGridMonth"
