@@ -203,3 +203,11 @@ label[for="customRange2"] {
   height: auto;
   display: block;
 }
+
+@media screen and (max-width: 500px) {
+  .p-button {
+    width: 100%;
+    height: 1.5rem;
+    font-size: .75rem;
+  }
+}
