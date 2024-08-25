@@ -215,3 +215,10 @@ label[for="customRange2"] {
     font-size: .75rem;
   }
 }
+
+.landscape-alert-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh!important;
+}
