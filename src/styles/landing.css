@@ -19,16 +19,6 @@ body {
   -ms-user-select: none; /* Internet Explorer/Edge */
 }
 
-h1.slide-up {
-  --mdb-animation-slide-up-transform-to: translate3d(0, -1000%, 0)!important;
-}
-
-.logo-animation {
-  --mdb-animation-slide-up-transform-to: translate3d(0, -150%, 0)!important;
-  position: absolute;
-  bottom: -50%;
-}
-
 .cssbuttons-io-button {
   background: var(--fc-button-bg-color)!important;
   color: white;
@@ -81,4 +71,14 @@ h1.slide-up {
 
 .cssbuttons-io-button:active .icon {
   transform: scale(0.95);
+}
+
+.dynamic-font-size {
+  font-size: 1.5em;
+}
+
+@media screen and (max-width: 370px) {
+  .dynamic-font-size {
+    font-size: 1.2em;
+  }
 }
