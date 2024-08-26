@@ -2,7 +2,6 @@ import { Input, initMDB, Modal } from 'mdb-ui-kit';
 import { useEffect } from 'react';
 import supabase from '../database/config/supabase';
 import { Link, useNavigate } from 'react-router-dom';
-import path from 'path';
 
 const isSignedIn = async (): Promise<boolean> => {
   const { data: { session } } = await supabase.auth.getSession();
@@ -11,15 +10,6 @@ const isSignedIn = async (): Promise<boolean> => {
 
 const Login = () => {
   const navigate = useNavigate();
-
-  const loginWithProvider = async (provider: 'github' | 'google') => {
-    const { error } = await supabase.auth.signInWithOAuth({ provider });
-    
-    if (error) {
-      console.error(error.message);
-      throw error;
-    }
-  }
 
   useEffect(() => {
     initMDB({ Input });
