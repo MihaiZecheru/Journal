@@ -7,11 +7,14 @@ export default async function GetUser(): Promise<User> {
 
   if (error) {
     console.error('Error retrieving user: ', error);
+    // If there was a bug just have him sign in again
+    await supabase.auth.signOut();
     throw error;
   }
 
   return data.user;
 }
+
 export async function GetUserID(): Promise<UserID> {
   return (await GetUser()).id as UserID;
 }
