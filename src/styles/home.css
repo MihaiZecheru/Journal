@@ -237,3 +237,36 @@ label[for="customRange2"] {
 .view-entry-modal-display-star {
   cursor: pointer;
 }
+
+.fc-toolbar-title {
+  position: relative;
+  display: inline-block;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  cursor: pointer;
+}
+
+.fc-toolbar-title::after {
+  content: "Summarize month";
+  position: absolute;
+  top: 100%; /* Position below the element */
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #333;
+  color: #fff;
+  padding: 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s;
+  pointer-events: none; /* Prevent mouse events */
+  z-index: 1000;
+}
+
+.fc-toolbar-title:hover::after {
+  opacity: 1;
+  visibility: visible;
+}

@@ -804,6 +804,16 @@ const Home = () => {
   };
 
   useEffect(() => {
+    document.querySelector(".fc-toolbar-title")?.addEventListener('click', (e: any) => {
+      // Ex: 'August 2024'
+      const yearAndMonth = e.target.textContent.split(' ');
+      const year = yearAndMonth[2];
+      const month = yearAndMonth[1].toLowerCase();
+      navigate(`/summarize/${month}/${year}`);
+    });
+  }, []);
+
+  useEffect(() => {
     // Only check orientation on mobile
     if (!document.body.classList.contains('mobile')) return;
 
