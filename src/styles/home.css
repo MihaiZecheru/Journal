@@ -222,3 +222,18 @@ label[for="customRange2"] {
   align-items: center;
   height: 100vh!important;
 }
+
+.fas.entry-modal-display-star,
+.fas.view-entry-modal-display-star,
+.fas.date-display-star {
+  color: var(--mdb-warning);
+}
+
+.fas.date-display-star {
+  color: #B59410;
+}
+
+.entry-modal-display-star,
+.view-entry-modal-display-star {
+  cursor: pointer;
+}

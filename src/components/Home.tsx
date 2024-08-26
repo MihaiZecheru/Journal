@@ -16,6 +16,7 @@ import CustomTracker, { TCustomTrackerTypeField } from '../database/CustomTracke
 import icons from '../icons';
 import { useNavigate } from 'react-router-dom';
 import fileDownload from 'js-file-download'
+import { UserID } from '../database/ID';
 
 function mobileCheck() {
   let check = false;
@@ -40,6 +41,19 @@ function sort_custom_trackers(trackers: CustomTracker[]): CustomTracker[] {
   return trackers.sort((a: CustomTracker, b: CustomTracker) => a.type === b.type ? 0 : a.type === 'text' ? -1 : 1);
 }
 
+async function SetStarredValue(user_id: UserID, date: TDateString, starred: boolean) {
+  const { error } = await supabase.
+    from('Entries')
+    .update({ starred })
+    .eq('date', date)
+    .eq('user_id', user_id);
+
+  if (error) {
+    console.error(`Error setting starred value: ${error.message}`);
+    throw error;
+  }
+}
+
 function loadCalendar(entries: Entry[], calendarAPI: any) {
     calendarAPI.removeAllEvents();
 
@@ -56,7 +70,8 @@ function loadCalendar(entries: Entry[], calendarAPI: any) {
         color: colors[entry.rating - 1],
         extendedProps: {
           hours_slept: entry.hours_slept,
-          custom_trackers: entry.custom_trackers
+          custom_trackers: entry.custom_trackers,
+          starred: entry.starred
         }
       });
     });
@@ -90,6 +105,7 @@ const Home = () => {
   const hoursSleptInput = useRef<HTMLInputElement>(null);
   const dayRatingDisplayNumber = useRef<HTMLSpanElement>(null);
   const fileUploadComponent = useRef<FileUpload>(null);
+  const entryModalStarredDisplay = useRef<HTMLDivElement>(null);
 
   // Custom Trackers
   const customTrackersModal = useRef<HTMLDivElement>(null);
@@ -110,6 +126,7 @@ const Home = () => {
   const viewEntryModalTitle = useRef<HTMLHeadingElement>(null);
   const viewEntryModalHoursSleptArea = useRef<HTMLDivElement>(null);
   const viewEntryModalRatingDisplay = useRef<HTMLSpanElement>(null);
+  const viewEntryModalStarredDisplay = useRef<HTMLDivElement>(null);
 
   // View memories modal
   const viewMemoriesModal = useRef<HTMLDivElement>(null);
@@ -264,6 +281,20 @@ const Home = () => {
       if (!existingEntry) return alert(`No entry exists for ${weekday}, ${month} ${date.getDate()}`);
       viewEntryModalTitle.current!.textContent = `${weekday}, ${month} ${date.getDate()}`;
       viewEntryModalRatingDisplay.current!.textContent = existingEntry.rating === 11 ? 'x' : existingEntry.rating.toString();
+      viewEntryModalStarredDisplay.current!.innerHTML = existingEntry.starred ? '<i class="fas fa-star fa-lg view-entry-modal-display-star"></i>' : '<i class="far fa-star fa-lg view-entry-modal-display-star"></i>';
+      document.querySelector('.view-entry-modal-display-star')?.addEventListener('click', async (e: any) => {
+        e.target!.classList.toggle('fas');
+        e.target!.classList.toggle('far');
+        if (!existingEntry.starred) {
+          existingEntry.starred = true;
+          await SetStarredValue(await GetUserID(), existingEntry.date, true);
+        } else {
+          existingEntry.starred = false;
+          await SetStarredValue(await GetUserID(), existingEntry.date, false);
+        }
+        calendar.current!.getApi().getEvents().find((event: any) => event.startStr === existingEntry.date)!.setExtendedProp('starred', existingEntry.starred);
+        entries.current.map((entry: Entry) => entry.date === existingEntry.date ? existingEntry : entry);
+      });
       const color = colors[existingEntry.rating - 1];
 			viewEntryModal.current!.setAttribute('data-startstr', existingEntry.date);
       viewEntryModalTitle.current!.parentElement!.style.backgroundColor = color;
@@ -338,6 +369,22 @@ const Home = () => {
       // Set modal color
       entryModalRatingInput.current!.value = (existingRating === 11 ? 5 : existingRating).toString();
       dayRatingDisplayNumber.current!.textContent = existingRating === 11 ? 'x' : existingRating.toString();
+      entryModalStarredDisplay.current!.innerHTML = existingEntry.starred
+        ? '<i class="fas fa-star fa-lg entry-modal-display-star"></i>'
+        : '<i class="far fa-star fa-lg entry-modal-display-star"></i>';
+        document.querySelector('.entry-modal-display-star')?.addEventListener('click', async (e: any) => {
+          e.target!.classList.toggle('fas');
+          e.target!.classList.toggle('far');
+          if (!existingEntry.starred) {
+            existingEntry.starred = true;
+            await SetStarredValue(await GetUserID(), existingEntry.date, true);
+          } else {
+            existingEntry.starred = false;
+            await SetStarredValue(await GetUserID(), existingEntry.date, false);
+          }
+          calendar.current!.getApi().getEvents().find((event: any) => event.startStr === existingEntry.date)!.setExtendedProp('starred', existingEntry.starred);
+          entries.current.map((entry: Entry) => entry.date === existingEntry.date ? existingEntry : entry);
+        });
       setModalColor(existingRating);
 
       // Show delete button
@@ -403,11 +450,13 @@ const Home = () => {
     // Prevent the selection of multiple days at once
     const start = new Date(selectInfo.startStr).getDate();
     const end = new Date(selectInfo.endStr).getDate();
-    // Note: this uses startStr because the startStr is always 1 day behind the endStr,
-    // and when selecting the current day, this will allow for the current date to be selected.
-    // if endStr were used instread, the current date would not be selectable; it would be
-    // considered to be "in the future"
-    const dateIsInTheFuture = new Date(selectInfo.startStr) > new Date();
+    const today = new Date();
+    const endDate = new Date(selectInfo.endStr);
+    today.setHours(0);   today.setMinutes(0);
+    today.setSeconds(0); today.setMilliseconds(0);
+    endDate.setHours(0);   endDate.setMinutes(0);
+    endDate.setSeconds(0); endDate.setMilliseconds(0);
+    const dateIsInTheFuture = endDate.getTime() > today.getTime();
     return ((start === end - 1) || (start === 31 && end === 1) || (start === 30 && end === 1)) && !dateIsInTheFuture;
   };
 
@@ -440,7 +489,7 @@ const Home = () => {
       // Update the entry in the database
       const { error } = await supabase
         .from('Entries')
-        .update({ rating, journal_entry: text, hours_slept: hoursSlept, custom_trackers: customTrackers })
+        .update({ rating, journal_entry: text, hours_slept: hoursSlept, custom_trackers: customTrackers, starred: false })
         .eq('date', startStr)
         .eq('user_id', await GetUserID());
 
@@ -451,7 +500,7 @@ const Home = () => {
 
       // Add to entries
       const index = entries.current.findIndex((entry: Entry) => entry.date === startStr);
-      entries.current[index] = { user_id: await GetUserID(), date: startStr as TDateString, rating, journal_entry: text, hours_slept: hoursSlept, custom_trackers: customTrackers };
+      entries.current[index] = { user_id: await GetUserID(), date: startStr as TDateString, rating, journal_entry: text, hours_slept: hoursSlept, custom_trackers: customTrackers, starred: false };
 
       // Remove the existing event from the calendar
       const event = calendar.current!.getApi().getEvents().find((event: any) => event.startStr === startStr)!;
@@ -464,7 +513,7 @@ const Home = () => {
       // Add the entry to the database
       const { error } = await supabase
         .from('Entries')
-        .insert({ user_id: await GetUserID(), date: startStr, rating, journal_entry: text, hours_slept: hoursSlept, custom_trackers: customTrackers });
+        .insert({ user_id: await GetUserID(), date: startStr, rating, journal_entry: text, hours_slept: hoursSlept, custom_trackers: customTrackers, starred: false });
 
       if (error) {
         console.error(`Error inserting entry: ${error.message}`);
@@ -472,7 +521,7 @@ const Home = () => {
       }
 
       // Add to entries
-      entries.current.push({ user_id: await GetUserID(), date: startStr as TDateString, rating, journal_entry: text, hours_slept: hoursSlept, custom_trackers: customTrackers });
+      entries.current.push({ user_id: await GetUserID(), date: startStr as TDateString, rating, journal_entry: text, hours_slept: hoursSlept, custom_trackers: customTrackers, starred: false });
       
       // If today, add as foreground event
       if (startStr === GetTodaysDate()) {
@@ -590,23 +639,14 @@ const Home = () => {
 
   const customCalendarRendering = (arg: any) => {
     const event = arg.event;
-    const hours_slept = event.extendedProps?.hours_slept || '';
+    const starred = event.extendedProps?.starred || false;
     const custom_trackers = event.extendedProps?.custom_trackers as Record<string, string | boolean>;
     
-    // Are there any checkbox custom trackers that are checked?
-    const checked_checkbox_custom_trackers_exist = custom_trackers && Object.values(custom_trackers).some((value: string | boolean) => value === true);
-
     return (
       <div>
         <div className="d-flex align-items-center me-1">
           {
-            hours_slept &&
-            <div className={ "calendar-event-hours-slept ms-1" + ((checked_checkbox_custom_trackers_exist) ? '' : ' mt-half') }>
-              { parseInt(hours_slept) !== hours_slept
-                ? <span className="badge badge-dark">{ parseInt(hours_slept) } &#189; hours</span>
-                : <span className="badge badge-dark">{ parseInt(hours_slept) } hours</span>
-              }
-            </div>
+            starred ? <div><i className="fas fa-star fa-lg date-display-star"></i></div> : <div><i className="far fa-star fa-lg date-display-star"></i></div>
           }
           {
             custom_trackers && Object.keys(custom_trackers).map((key: string) => {
@@ -755,10 +795,8 @@ const Home = () => {
   };
 
   const performIconSearch = (q: string) => {
-    console.log(q);
     const grid_icons = iconsGrid.current!.querySelectorAll('i');
     grid_icons.forEach((icon: Element) => {
-      console.log(icon);
       const icon_name = icon.getAttribute('data-icon-class-string')!;
       if (icon_name.includes(q)) icon.classList.remove('d-none');
       else icon.classList.add('d-none');
@@ -809,6 +847,7 @@ const Home = () => {
           <div className="modal-content">
             <div className="modal-header">
               <h5 className="modal-title" id="entry-modal-label" ref={ entryModalTitle }>Modal title (dynamically changed)</h5>
+              <div className="ms-2" ref={ entryModalStarredDisplay }></div>
               <button type="button" className="btn-close" data-mdb-ripple-init data-mdb-dismiss="modal" aria-label="Close"></button>
             </div>
             <div className="modal-body">
@@ -1065,6 +1104,7 @@ const Home = () => {
               <h5 className="modal-title" id="view-entry-modal-label" ref={ viewEntryModalTitle }>DYNAMIC TITLE</h5>
               <div className="d-flex align-items-center">
                 <b><span ref={ viewEntryModalRatingDisplay }>x</span> / 10</b>
+                <div className="ms-3" ref={ viewEntryModalStarredDisplay }></div>
                 <button type="button" className="btn-close ms-2 d-flex align-items-center" data-mdb-ripple-init data-mdb-dismiss="modal" aria-label="Close" style={{ marginLeft: 0 }}></button>
               </div>
             </div>

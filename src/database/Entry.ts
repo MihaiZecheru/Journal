@@ -8,4 +8,5 @@ export default interface Entry {
   journal_entry: string;
   hours_slept?: number;
   custom_trackers?: Record<string, string | boolean>;
+  starred: boolean;
 }
