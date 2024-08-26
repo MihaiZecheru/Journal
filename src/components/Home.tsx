@@ -886,7 +886,7 @@ const Home = () => {
               <div>
                 <span style={{ "color": "var(--mdb-form-control-label-color)" }} className="no-highlight">Trackers</span>
                 <div className="form-outline mt-2" data-mdb-input-init>
-                  <input type="number" id="hours-slept-input" min="0" max="24" step="0.5" className="form-control" ref={ hoursSleptInput } onChange={ (e: any) => {
+                  <input type="number" id="hours-slept-input" min="0.0" max="24.0" step="0.5" className="form-control" ref={ hoursSleptInput } onChange={ (e: any) => {
                     if (e.target.value > 24) e.target.value = 24;
                     if (e.target.value < 0) e.target.value = 0;
                     // eslint-disable-next-line eqeqeq
