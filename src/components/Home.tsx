@@ -94,7 +94,6 @@ function loadCalendar(entries: Entry[], calendarAPI: any) {
 const Home = () => {
   const navigate = useNavigate();
   const calendar = useRef<FullCalendar>(null);
-  const [viewMemoriesModalFiles, setViewMemoriesModalFiles] = useState<{ name: string, url: string, date: string}[]>([]);
 
   // Entry modal
   const entryModal = useRef<HTMLDivElement>(null);
@@ -132,11 +131,13 @@ const Home = () => {
   const viewMemoriesModal = useRef<HTMLDivElement>(null);
   const viewMemoriesModalBody = useRef<HTMLDivElement>(null);
   const viewMemoriesModalDateDisplay = useRef<HTMLSpanElement>(null);
+  const [viewMemoriesModalFiles, setViewMemoriesModalFiles] = useState<{ name: string, url: string, date: string}[]>([]);
 
   // View entry memories modal
   const viewEntryMemoriesModal = useRef<HTMLDivElement>(null);
   const viewEntryMemoriesModalBody = useRef<HTMLDivElement>(null);
   const viewEntryMemoriesModalDateDisplay = useRef<HTMLSpanElement>(null);
+  
 
   const [loading, setLoading] = useState<boolean>(true);
   const [landscape, setLandscape] = useState<boolean>(false);
