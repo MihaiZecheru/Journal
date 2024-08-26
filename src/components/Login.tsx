@@ -82,7 +82,6 @@ const Login = () => {
           console.error(error.message);
           throw error;
         }
-        // TODO: in supabase configure the email
       });
     });
 
@@ -120,18 +119,6 @@ const Login = () => {
 
                 <button type="submit" data-mdb-button-init data-mdb-ripple-init className="btn btn-primary btn-lg btn-block" id="login-btn">Login</button>
 
-                <div className="divider d-flex align-items-center justify-content-center my-4">
-                  <div className="border-top border-secondary mx-3 flex-grow-1"></div>
-                  <p className="text-center fw-bold mx-3 mb-0 text-muted">OR</p>
-                  <div className="border-top border-secondary mx-3 flex-grow-1"></div>
-                </div>
-
-                <button data-mdb-ripple-init className="btn btn-primary btn-lg btn-block" style={{ "backgroundColor": "#4285F4" }} onClick={ () => { loginWithProvider('google') }}>
-                    <i className="fab fa-google"></i><span> Continue with Google</span>
-                </button>
-                <button data-mdb-ripple-init className="btn btn-primary btn-lg btn-block" style={{ "backgroundColor": "#1d1a1a" }} onClick={ () => { loginWithProvider('github') }}>
-                  <i className="fab fa-github"></i><span> Continue with GitHub</span>
-                </button>
               </form>
             </div>
           </div>
