@@ -138,7 +138,6 @@ const Home = () => {
   const viewEntryMemoriesModalBody = useRef<HTMLDivElement>(null);
   const viewEntryMemoriesModalDateDisplay = useRef<HTMLSpanElement>(null);
   
-
   const [loading, setLoading] = useState<boolean>(true);
   const [landscape, setLandscape] = useState<boolean>(false);
   const [editMode, setEditMode] = useState<boolean>(false);
