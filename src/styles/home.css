@@ -216,13 +216,6 @@ label[for="customRange2"] {
   }
 }
 
-.landscape-alert-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 100vh!important;
-}
-
 .fas.entry-modal-display-star,
 .fas.view-entry-modal-display-star,
 .fas.date-display-star {

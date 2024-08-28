@@ -139,7 +139,6 @@ const Home = () => {
   const viewEntryMemoriesModalDateDisplay = useRef<HTMLSpanElement>(null);
   
   const [loading, setLoading] = useState<boolean>(true);
-  const [landscape, setLandscape] = useState<boolean>(false);
   const [editMode, setEditMode] = useState<boolean>(false);
   const entries = useRef<Entry[]>([]);
 
@@ -173,17 +172,6 @@ const Home = () => {
       }
 
       setCustomTrackers(sort_custom_trackers(data1));
-      
-      const handleOrientationChange = () => {
-        if (window.matchMedia("(orientation: landscape)").matches) {
-          setLandscape(true);
-        } else {
-          setLandscape(false);
-        }
-      };
-      
-      handleOrientationChange();
-      window.addEventListener('orientationchange', handleOrientationChange);
 
       // If a 1.5 seconds haven't passed, wait until they have
       while (Date.now() - timeStamp < 1500) continue;
@@ -813,27 +801,9 @@ const Home = () => {
     });
   }, []);
 
-  useEffect(() => {
-    // Only check orientation on mobile
-    if (!document.body.classList.contains('mobile')) return;
-
-    const calendar_ = document.querySelector('.fc') as HTMLDivElement;
-    if (landscape) {
-      calendar_.classList.remove('d-none');
-    } else {
-      calendar_.classList.add('d-none');
-    }
-  }, [landscape]);
-
   return (
     <div className="home">
       { loading && <Loading /> }
-      {
-        !landscape &&
-        <div className="landscape-alert-container">
-          <div className="alert alert-warning text-center">This app is best viewed in landscape mode</div>
-        </div>
-      }
       <FullCalendar
         headerToolbar={{
           left: 'prevYear,prev,next,nextYear',
