@@ -857,11 +857,12 @@ const Home = () => {
                 <span style={{ "color": "var(--mdb-form-control-label-color)" }} className="no-highlight">Trackers</span>
                 <div className="form-outline mt-2" data-mdb-input-init>
                   <input type="number" id="hours-slept-input" min="0.0" max="24.0" step="0.5" className="form-control" ref={ hoursSleptInput } onChange={ (e: any) => {
+                    console.log(isNaN(parseInt(e.target.value)));
+                    if (isNaN(parseInt(e.target.value))) return; // wait for next char
                     if (e.target.value > 24) e.target.value = 24;
                     if (e.target.value < 0) e.target.value = 0;
                     // eslint-disable-next-line eqeqeq
                     if (e.target.value == 0) e.target.value = '';
-                    if (/^\d\.$/.test(e.target.value)) return; // wait for next char
 
                     const isFloat = parseFloat(e.target.value) != parseInt(e.target.value);
                     if (isFloat && (parseFloat(e.target.value) - parseInt(e.target.value)) != 0.5) e.target.value = parseInt(e.target.value) + 0.5;
