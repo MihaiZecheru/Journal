@@ -684,7 +684,10 @@ const Home = () => {
           console.error(`Error uploading file: ${error.message}`);
           if (error.message === 'The resource already exists')
             alert(`A file with the name '${file.name}' already exists`);
-          else errorToThrow = error;
+          else {
+            alert(`Error uploading file: ${error.message}`);
+            errorToThrow = error
+          }
         }
 
         
