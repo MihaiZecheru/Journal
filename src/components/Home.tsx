@@ -1020,7 +1020,7 @@ const Home = () => {
                 icon?.classList.remove('selected');
                 createNewCustomTracker(
                   addCustomTrackerName.current!.value.trim(),
-                  addCustomTrackerType.current!.checked ? 'checkbox' : 'text'
+                  addCustomTrackerType.current!.checked ? 'text' : 'checkbox'
                 );
               }}>Add Tracker</button>
             </div>
