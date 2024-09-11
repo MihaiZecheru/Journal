@@ -383,6 +383,7 @@ const Home = () => {
         Object.keys(existingEntry.custom_trackers).forEach((key: string) => {
           const value = existingEntry.custom_trackers![key];
           const input = document.querySelector(`.custom-tracker-input[data-tracker-name="${key}"] input`) as HTMLInputElement;
+          if (input === null) return;
           if (input.type === 'checkbox') {
             input.checked = value as boolean;
             const i = input.parentElement?.parentElement?.querySelector('i') as HTMLElement;
