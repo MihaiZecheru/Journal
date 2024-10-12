@@ -550,7 +550,7 @@ const Home = () => {
   const entryModalInputKeyHandler = (e: any) => {
     if (e.key === 'Enter' && e.ctrlKey) {
       e.preventDefault();
-      (entryModal.current!.querySelector('button.btn-primary')! as HTMLButtonElement).click();
+      (entryModal.current!.querySelector('button.save-button')! as HTMLButtonElement).click();
     }
   };
 
