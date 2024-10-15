@@ -1,0 +1,13 @@
+.summarize {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100vw;
+  height: 100vh;
+}
+
+.summary-page-loading-spinner {
+  position: absolute;
+  top: 1.5rem;
+  right: 1.5rem;
+}
