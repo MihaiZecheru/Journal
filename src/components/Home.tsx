@@ -548,7 +548,7 @@ const Home = () => {
   };
 
   const entryModalInputKeyHandler = (e: any) => {
-    if (e.key === 'Enter' && e.ctrlKey) {
+    if ((e.key === 'Enter' && e.ctrlKey) || (e.key === 's' && e.ctrlKey)) {
       e.preventDefault();
       (entryModal.current!.querySelector('button.save-button')! as HTMLButtonElement).click();
     }
@@ -799,8 +799,8 @@ const Home = () => {
     document.querySelector(".fc-toolbar-title")?.addEventListener('click', (e: any) => {
       // Ex: 'August 2024'
       const yearAndMonth = e.target.textContent.split(' ');
-      const year = yearAndMonth[2];
-      const month = yearAndMonth[1].toLowerCase();
+      const month = yearAndMonth[0].toLowerCase();
+      const year = yearAndMonth[1];
       navigate(`/summarize/${month}/${year}`);
     });
   }, []);
