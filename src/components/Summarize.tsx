@@ -1,31 +1,33 @@
 import "../styles/summarize.css";
 import { useEffect, useState } from "react";
-import { NavigateFunction, useNavigate, useParams } from "react-router-dom";
-import OpenAI from "openai";
-import Entry from "../database/Entry";
+import { useNavigate, useParams } from "react-router-dom";
 import supabase from "../database/config/supabase";
 import { GetUserID } from "../database/GetUser";
-const openAI = new OpenAI({ apiKey: process.env.REACT_APP_OPENAI_API_KEY!, dangerouslyAllowBrowser: true, organization: process.env.REACT_APP_OPENAI_ORG_ID, project: process.env.REACT_APP_OPENAI_PROJECT_ID });
 
 function capitalizeFirstLetter(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-/**
- * Summarize the given entries
- * 
- * @param entries Each item in the list is the content of an entry
- * @returns An AI generated summary of the given entries
- */
-async function GenerateSummary(entries: Array<string>): Promise<string> {
-  const response = await openAI.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [{
-      "role": "user",
-      "content": `You are to summarize a user's journal entries for a month. Do not make assumptions, don't be sappy. Be more direct. Use second person only, less formal. Max of 5 sentences. There's ${entries.length} entries. START: ${entries.join("\nNext:\n")}\nThen, type "**Highlights:**" and separately from the summary give 3 events that are highlights from the month, still in second person, numbered.`
-    }]
+async function GenerateSummary(entries: string[]): Promise<string> {
+  return fetch('https://journal.mzecheru.com/api/generate-summary', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ entries })
+  }).then((res) => {
+    if (res.status === 200) {
+      return res.json();
+    } else {
+      alert('Summary failed with error code ' + res.status)
+      return null;
+    }
+  }).then((res) => {
+    return res.summary;
+  }).catch((err) => {
+    alert('Summary failed due to unknown error. ' + err.message);
+    return null;
   });
-  return response.choices[0].message.content!;
 }
 
 /**
