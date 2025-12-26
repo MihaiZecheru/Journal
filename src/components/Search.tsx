@@ -16,7 +16,8 @@ async function GetAllUserEntries(user_id: UserID): Promise<Entry[]> {
     .order('date', { ascending: true });
 
   if (error) {
-    throw new Error();
+    alert("ERROR getting all user entries from database: " + error.message);
+    throw error;
   }
 
   return data;
