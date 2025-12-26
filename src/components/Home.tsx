@@ -69,7 +69,6 @@ function loadCalendar(entries: Entry[], calendarAPI: any) {
         display: 'background',
         color: colors[entry.rating - 1],
         extendedProps: {
-          hours_slept: entry.hours_slept,
           custom_trackers: entry.custom_trackers,
           starred: entry.starred
         }
@@ -84,7 +83,6 @@ function loadCalendar(entries: Entry[], calendarAPI: any) {
         display: 'foreground',
         color: colors[today.rating - 1],
         extendedProps: {
-          hours_slept: today.hours_slept,
           custom_trackers: today.custom_trackers
         }
       });
@@ -101,7 +99,6 @@ const Home = () => {
   const entryModalLabel = useRef<HTMLLabelElement>(null);
   const entryModalRatingInput = useRef<HTMLInputElement>(null);
   const entryModalTextArea = useRef<HTMLTextAreaElement>(null);
-  const hoursSleptInput = useRef<HTMLInputElement>(null);
   const dayRatingDisplayNumber = useRef<HTMLSpanElement>(null);
   const fileUploadComponent = useRef<FileUpload>(null);
   const entryModalStarredDisplay = useRef<HTMLDivElement>(null);
@@ -123,7 +120,6 @@ const Home = () => {
   const viewEntryModal = useRef<HTMLDivElement>(null);
   const viewEntryModalBody = useRef<HTMLDivElement>(null);
   const viewEntryModalTitle = useRef<HTMLHeadingElement>(null);
-  const viewEntryModalHoursSleptArea = useRef<HTMLDivElement>(null);
   const viewEntryModalRatingDisplay = useRef<HTMLSpanElement>(null);
   const viewEntryModalStarredDisplay = useRef<HTMLDivElement>(null);
 
@@ -250,9 +246,6 @@ const Home = () => {
     // Clear text area
     entryModalTextArea.current!.value = '';
 
-    // Clear hours slept input
-    hoursSleptInput.current!.value = '';
-
     // Set modal title
     entryModalTitle.current!.textContent = `${weekday}, ${month} ${date.getDate()}`;
     entryModalLabel.current!.textContent = date.getDate() === new Date().getDate() ? 'What happened today?' : (date.getDate() === new Date().getDate() - 1) ? `What happened yesterday?` : `What happened on ${weekday}?`;
@@ -304,8 +297,6 @@ const Home = () => {
         </div>
       `;
 
-      viewEntryModalHoursSleptArea.current!.innerHTML =  existingEntry.hours_slept ? `<div><span class="badge badge-info no-highlight br-5">${existingEntry.hours_slept} hours slept</span></div>` : '';
-
       (async () => {
         const userID = await GetUserID();
 
@@ -348,11 +339,6 @@ const Home = () => {
 
       // Set slider to existing rating
       let existingRating = existingEntry.rating;
-
-      // Set input to existing hours slept
-      if (existingEntry.hours_slept) {
-        hoursSleptInput.current!.value = existingEntry.hours_slept.toString();
-      }
 
       // Set modal color
       entryModalRatingInput.current!.value = (existingRating === 11 ? 5 : existingRating).toString();
@@ -453,9 +439,6 @@ const Home = () => {
     const startStr = entryModal.current!.getAttribute('data-startstr')!;
     const text = entryModalTextArea.current!.value.trim();
     let rating = parseInt(entryModalRatingInput.current!.value);
-    
-    if (/^\d\.$/.test(hoursSleptInput.current!.value)) hoursSleptInput.current!.value = hoursSleptInput.current!.value + '0';
-    const hoursSlept = parseFloat(hoursSleptInput.current!.value);
 
     // Get custom trackers
     const customTrackers: { [key: string]: string | boolean } = {};
@@ -478,7 +461,7 @@ const Home = () => {
       // Update the entry in the database
       const { error } = await supabase
         .from('Entries')
-        .update({ rating, journal_entry: text, hours_slept: hoursSlept, custom_trackers: customTrackers, starred: false })
+        .update({ rating, journal_entry: text, custom_trackers: customTrackers, starred: false })
         .eq('date', startStr)
         .eq('user_id', await GetUserID());
 
@@ -489,20 +472,19 @@ const Home = () => {
 
       // Add to entries
       const index = entries.current.findIndex((entry: Entry) => entry.date === startStr);
-      entries.current[index] = { user_id: await GetUserID(), date: startStr as TDateString, rating, journal_entry: text, hours_slept: hoursSlept, custom_trackers: customTrackers, starred: false };
+      entries.current[index] = { user_id: await GetUserID(), date: startStr as TDateString, rating, journal_entry: text, custom_trackers: customTrackers, starred: false };
 
       // Remove the existing event from the calendar
       const event = calendar.current!.getApi().getEvents().find((event: any) => event.startStr === startStr)!;
       event.setProp('title', text);
       event.setProp('color', colors[rating - 1]);
       event.setProp('display', startStr === GetTodaysDate() ? 'foreground' : 'background');
-      event.setExtendedProp('hours_slept', hoursSlept);
       event.setExtendedProp('custom_trackers', customTrackers);
     } else {
       // Add the entry to the database
       const { error } = await supabase
         .from('Entries')
-        .insert({ user_id: await GetUserID(), date: startStr, rating, journal_entry: text, hours_slept: hoursSlept, custom_trackers: customTrackers, starred: false });
+        .insert({ user_id: await GetUserID(), date: startStr, rating, journal_entry: text, custom_trackers: customTrackers, starred: false });
 
       if (error) {
         console.error(`Error inserting entry: ${error.message}`);
@@ -510,7 +492,7 @@ const Home = () => {
       }
 
       // Add to entries
-      entries.current.push({ user_id: await GetUserID(), date: startStr as TDateString, rating, journal_entry: text, hours_slept: hoursSlept, custom_trackers: customTrackers, starred: false });
+      entries.current.push({ user_id: await GetUserID(), date: startStr as TDateString, rating, journal_entry: text, custom_trackers: customTrackers, starred: false });
       
       // If today, add as foreground event
       if (startStr === GetTodaysDate()) {
@@ -521,7 +503,6 @@ const Home = () => {
           display: 'foreground',
           color: colors[rating - 1],
           extendedProps: {
-            hours_slept: hoursSlept,
             custom_trackers: customTrackers
           }
         });
@@ -534,7 +515,6 @@ const Home = () => {
           display: 'background',
           color: colors[rating - 1],
           extendedProps: {
-            hours_slept: hoursSlept,
             custom_trackers: customTrackers
           }
         });
@@ -859,20 +839,6 @@ const Home = () => {
               </div>
               <div>
                 <span style={{ "color": "var(--mdb-form-control-label-color)" }} className="no-highlight">Trackers</span>
-                <div className="form-outline mt-2" data-mdb-input-init>
-                  <input type="number" id="hours-slept-input" min="0.0" max="24.0" step="0.5" className="form-control" ref={ hoursSleptInput } onChange={ (e: any) => {
-                    console.log(isNaN(parseInt(e.target.value)));
-                    if (isNaN(parseInt(e.target.value))) return; // wait for next char
-                    if (e.target.value > 24) e.target.value = 24;
-                    if (e.target.value < 0) e.target.value = 0;
-                    // eslint-disable-next-line eqeqeq
-                    if (e.target.value == 0) e.target.value = '';
-
-                    const isFloat = parseFloat(e.target.value) != parseInt(e.target.value);
-                    if (isFloat && (parseFloat(e.target.value) - parseInt(e.target.value)) != 0.5) e.target.value = parseInt(e.target.value) + 0.5;
-                  }}/>
-                  <label className="form-label" htmlFor="hours-slept-input">Hours slept</label>
-                </div>
                 { customTrackers && customTrackers.map((tracker: CustomTracker, index: number) => {
                     const id = tracker.name.replaceAll(' ', '-') + '-' + index.toString() + '-calendar-input';
                     return tracker.type === 'checkbox'
@@ -1097,7 +1063,6 @@ const Home = () => {
 
             </div>
             <div className="modal-footer d-flex justify-content-between align-items-center">
-              <div ref={ viewEntryModalHoursSleptArea }></div>
               <div>
                 <button type="button" className="btn btn-secondary me-2" data-mdb-ripple-init onClick={ async () => {
                   const date = viewEntryModal.current!.getAttribute('data-startstr')!;
