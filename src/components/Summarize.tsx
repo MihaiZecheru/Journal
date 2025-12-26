@@ -76,6 +76,43 @@ async function SaveSummary(month: number, year: number, summary: string) {
   }
 }
 
+/**
+ * Update the summary in the database for the given month/year
+ * @param rawSummary The raw summary includes the highlights at the bottom
+ */
+async function UpdateSummary(month: number, year: number, rawSummary: string) {
+  const { data, error } = await supabase
+    .from('Summaries')
+    .update({ summary: rawSummary })
+    .eq('user_id', await GetUserID())
+    .eq('month', month)
+    .eq('year', year)
+    .select();
+
+  if (!error && data.length === 0) {
+    alert("No summary row found to update");
+  }
+
+  if (error) {
+    alert("ERROR updating summary: " + error.message);
+    throw error;
+  }
+}
+
+async function DeleteSummary(month: number, year: number): Promise<void> {
+  const { error } = await supabase
+    .from('Summaries')
+    .delete()
+    .eq('user_id', await GetUserID())
+    .eq('month', month)
+    .eq('year', year);
+
+  if (error) {
+    alert("ERROR deleting summary: " + error.message);
+    throw error;
+  }
+}
+
 const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 const Summarize = () => {
@@ -85,6 +122,8 @@ const Summarize = () => {
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [highlights, setHighlights] = useState<[string, string, string] | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [editMode, setEditMode] = useState<boolean>(false);
+  const [rawSummary, setRawSummary] = useState<string>();
   
   if (!params.year || !params.month) {
     navigate('/home');
@@ -178,13 +217,29 @@ const Summarize = () => {
         const generated_summary: string = await GenerateSummary(entries);
         
         SaveSummary(months.indexOf(month), year, generated_summary);
+        setRawSummary(generated_summary);
         setSummary(generated_summary.substring(0, generated_summary.indexOf("**Highlights:**")).trim());
         const _highlights = generated_summary.match(/1\.(.*?)\n2\.(.*?)\n3\.(.*?)\./);
         setHighlights([_highlights![1].trim(), _highlights![2].trim(), _highlights![3].trim()]);
       } else {
-        setSummary(existingSummary.substring(0, existingSummary.indexOf("**Highlights:**")).trim());
-        const _highlights = existingSummary.match(/1\.(.*?)\n2\.(.*?)\n3\.(.*?)\./);
-        setHighlights([_highlights![1].trim(), _highlights![2].trim(), _highlights![3].trim()]);
+        try {
+          setRawSummary(existingSummary);
+          if (!existingSummary.includes("**Highlights:**"))
+            throw new TypeError("No **Highlights:** separator found");
+          setSummary(existingSummary.substring(0, existingSummary.indexOf("**Highlights:**")).trim());
+          const _highlights = existingSummary.match(/1\.(.*?)\n2\.(.*?)\n3\.(.*?)\./);
+          setHighlights([_highlights![1].trim(), _highlights![2].trim(), _highlights![3].trim()]);
+        } catch (err) {
+          if (err instanceof TypeError) {
+            console.error(err);
+            alert("The summary is formatted incorrectly. A new summary will be generated. The old summary has been copied to your clipboard.");
+            await DeleteSummary(months.indexOf(month), year);
+            navigator.clipboard.writeText(existingSummary);
+            window.location.reload();
+          } else {
+            throw err;
+          }
+        }
       }
 
       const endTime = new Date().getTime();
@@ -196,6 +251,15 @@ const Summarize = () => {
       }
     })();
   }, [navigate]);
+
+  const editTextAreaKeyDown = async (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.ctrlKey && (event.key === "Enter" || event.key === "s")) {
+      event.preventDefault();
+      setEditMode(false);
+      await UpdateSummary(months.indexOf(month), year, rawSummary!);
+      window.location.reload();
+    }
+  };
 
   return (
     <div className="summarize" key={`${month}-${year}`}>
@@ -222,7 +286,17 @@ const Summarize = () => {
           <div className="card" style={{ "width": "36rem" }}>
             <div className="card-body">
               <h3 className="card-title">Summary for {month}, {year}</h3>
-              <p className="card-text">{summary}</p>
+              {
+                editMode
+                ? <textarea
+                    className="card-text"
+                    title="Ctrl+Enter to save"
+                    style={{ width: '100%', height: '250px', padding: '1rem' }}
+                    onKeyDown={editTextAreaKeyDown}
+                    value={rawSummary}
+                    onChange={(e) => setRawSummary(e.target.value)} />
+                : <p className="card-text">{summary} <i className="fas fa-pen-to-square" style={{ cursor: 'pointer' }} onClick={() => setEditMode(!editMode)}></i></p>
+              }
             </div>
             <h5 className="card-header">Important Highlights</h5>
             <ul className="list-group list-group-light list-group-small">
