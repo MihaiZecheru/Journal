@@ -6,7 +6,6 @@ export default interface Entry {
   date: TDateString;
   rating: number; // 1 - 11; 1 - 10 for the rating, while 11 represents no rating
   journal_entry: string;
-  hours_slept?: number;
   custom_trackers?: Record<string, string | boolean>;
   starred: boolean;
 }
