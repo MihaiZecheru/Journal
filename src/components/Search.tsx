@@ -56,12 +56,12 @@ const Search = () => {
   const searchBoxOnKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") {
       event.preventDefault();
-      const search_query = searchBox.current!.value.trim();
+      const search_query = searchBox.current!.value.trim().toLowerCase();
 
       if (isNumericString(search_query)) {
         setSearchResults(sortByDate(allEntries!.filter((entry: Entry) => entry.date.includes(search_query)), sortByAscending));
       } else {
-        setSearchResults(sortByDate(allEntries!.filter((entry: Entry) => entry.journal_entry.includes(search_query)), sortByAscending));
+        setSearchResults(sortByDate(allEntries!.filter((entry: Entry) => entry.journal_entry.toLowerCase().includes(search_query)), sortByAscending));
       }
     }
   };
