@@ -333,9 +333,35 @@ const Home = () => {
       return new Modal(viewEntryModal.current).show();
     // Show create/edit entry modal
     } else {
+      // Check for any locally saved draft when creating an entry
+      // Open the entryModal with the locally saved draft
+      const locallySavedEntryData = window.localStorage.getItem("entry-modal-draft");
+      if (!existingEntry && locallySavedEntryData && JSON.parse(locallySavedEntryData).date == entryModalTitle.current!.textContent && JSON.parse(locallySavedEntryData).draft.length > 0) {
+        const useLocalDraft = window.confirm("Unsaved local changes have been detected. Do you want to load them?");
+        if (useLocalDraft) {
+          entryModalTextArea.current!.value = JSON.parse(locallySavedEntryData).draft;
+        }
+        
+        return new Modal(entryModal.current).show();
+      }
+
+      // Open the entryModal in its empty state
       if (!existingEntry) return new Modal(entryModal.current).show();
-      // Set textarea to existing entry
-      entryModalTextArea.current!.value = existingEntry.journal_entry;
+
+      // Check for any locally saved draft when editing an entry
+      if (locallySavedEntryData && JSON.parse(locallySavedEntryData).date == entryModalTitle.current!.textContent && JSON.parse(locallySavedEntryData).draft.length > 0) {
+        const useLocalDraft = window.confirm("Unsaved local changes have been detected. Do you want to load them? Saying no will delete the unsaved draft.");
+        if (useLocalDraft) {
+          entryModalTextArea.current!.value = JSON.parse(locallySavedEntryData).draft;
+        } else {
+          // Set textarea to existing entry
+          entryModalTextArea.current!.value = existingEntry.journal_entry;
+          window.localStorage.removeItem("entry-modal-draft");
+        }
+      } else {
+        // Set textarea to existing entry
+        entryModalTextArea.current!.value = existingEntry.journal_entry;
+      }
 
       // Set slider to existing rating
       let existingRating = existingEntry.rating;
@@ -520,6 +546,8 @@ const Home = () => {
         });
       }
     }
+
+    window.localStorage.removeItem("entry-modal-draft");
   };
 
   const onRatingRangeChange = (e: any) => {
@@ -785,6 +813,12 @@ const Home = () => {
     });
   }, []);
 
+  // Prevent progress from being lost when writing the modal by storing unsaved work in localStorage
+  const saveEntryModalDraftLocally = (e: any) => {
+    const data = { date: document.getElementById("entry-modal-label")?.innerText, draft: e.target.value };
+    window.localStorage.setItem("entry-modal-draft", JSON.stringify(data));
+  };
+
   return (
     <div className="home">
       { loading && <Loading /> }
@@ -816,7 +850,7 @@ const Home = () => {
             </div>
             <div className="modal-body">
               <div className="form-outline mb-2" data-mdb-input-init>
-                <textarea className="form-control" id="textAreaExample" rows={ 4 } ref={ entryModalTextArea } onKeyDown={ entryModalInputKeyHandler }></textarea>
+                <textarea className="form-control" id="textAreaExample" rows={ 4 } ref={ entryModalTextArea } onKeyDown={ entryModalInputKeyHandler } onChange={ saveEntryModalDraftLocally }></textarea>
                 <label className="form-label" htmlFor="textAreaExample" ref={ entryModalLabel }></label>
               </div>
               <div>
