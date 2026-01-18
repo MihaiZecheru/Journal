@@ -194,14 +194,10 @@ const Home = () => {
       navigate('/search');
     });
 
-    const logoutBtn = btns[3]!;
-    logoutBtn.innerHTML = '<i class="far fa-user me-2"></i>Logout';;
-    logoutBtn.addEventListener('click', () => {
-      setLoading(true);
-      setTimeout(async () => {
-        await supabase.auth.signOut();
-        navigate('/login');
-      }, 1000);
+    const accountBtn = btns[3]!;
+    accountBtn.innerHTML = '<i class="far fa-user me-2"></i>Account';;
+    accountBtn.addEventListener('click', () => {
+      navigate('/account');
     });
   }, []);
 

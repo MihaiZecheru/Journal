@@ -10,6 +10,7 @@ import Home from './components/Home';
 import Landing from './components/Landing';
 import Search from './components/Search';
 import Summarize from './components/Summarize';
+import Account from './components/Account';
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
           <Route path="/home" element={ <Authenticator component={<Home />} /> } />
           <Route path="/search" element={ <Authenticator component={<Search />} /> } />
           <Route path="/summarize/:month/:year" element={ <Authenticator component={<Summarize />} /> } />
+          <Route path="/account" element={ <Authenticator component={<Account />} /> } />
           <Route path="/logout" element={ <Authenticator component={<Logout />} /> } />
         </Routes>
       </div>
