@@ -37,10 +37,10 @@ async function GenerateSummary(entries: string[]): Promise<string> {
  * @param year The year the summary is for
  * @returns The summary if it exists, otherwise null
  */
-async function GetExistingSummary(month: number, year: number): Promise<string | null> {
+async function GetExistingSummary(month: number, year: number): Promise<{ summary: string, average_rating: number } | null> {
   const { data, error } = await supabase
     .from('Summaries')
-    .select('summary')
+    .select('summary, average_rating')
     .eq('user_id', await GetUserID())
     .eq('month', month)
     .eq('year', year);
@@ -54,7 +54,7 @@ async function GetExistingSummary(month: number, year: number): Promise<string |
     return null;
   }
 
-  return data[0].summary;
+  return { summary: data[0].summary, average_rating: data[0].average_rating };
 }
 
 /**
@@ -64,11 +64,11 @@ async function GetExistingSummary(month: number, year: number): Promise<string |
  * @param year The year the summary is for
  * @param summary The summary itself
  */
-async function SaveSummary(month: number, year: number, summary: string) {
+async function SaveSummary(month: number, year: number, summary: string, average_rating: number) {
   const { error } = await supabase
     .from('Summaries')
     .insert([
-      { user_id: await GetUserID(), month, year, summary }
+      { user_id: await GetUserID(), month, year, summary, average_rating }
     ]);
 
   if (error) {
@@ -113,6 +113,49 @@ async function DeleteSummary(month: number, year: number): Promise<void> {
   }
 }
 
+// Note that month is 0-indexed
+async function CalculateAverageRating(month: number, year: number): Promise<number> {
+  const userId = await GetUserID();
+  // Start: First day of the month
+  const startDate = new Date(year, month, 1).toISOString().split('T')[0];
+  // End: "Day 0" of the next month is actually the last day of the current month.
+  const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+
+  const { data, error } = await supabase
+    .from('Entries')
+    .select('rating')
+    .eq('user_id', userId)
+    .gte('date', startDate)
+    .lte('date', endDate);
+
+  if (error) {
+    console.error('Fetch error:', error.message);
+    return 0;
+  }
+
+  if (!data || data.length === 0) return 0;
+  const sum = data.reduce((acc, curr) => acc + curr.rating, 0);
+  const average = sum / data.length;
+  return parseFloat(average.toFixed(1));
+}
+
+async function SaveAverageRating(month: number, year: number, average_rating: number): Promise<void> {
+  const userId = await GetUserID();
+
+  const { error } = await supabase
+  .from('Summaries')
+  .update({ average_rating })
+  .match({ 
+    user_id: userId,
+    month: month,
+    year: year
+  });
+
+  if (error) {
+    console.error('Save error:', error.message);
+  }
+}
+
 const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 const Summarize = () => {
@@ -124,6 +167,7 @@ const Summarize = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [editMode, setEditMode] = useState<boolean>(false);
   const [rawSummary, setRawSummary] = useState<string>();
+  const [averageRating, setAverageRating] = useState<number>();
   
   if (!params.year || !params.month) {
     navigate('/home');
@@ -195,7 +239,7 @@ const Summarize = () => {
   
         const { data, error } = await supabase
           .from('Entries')
-          .select('journal_entry')
+          .select('journal_entry, rating')
           .eq('user_id', await GetUserID())
           .filter('date', 'gte', startDate)
           .filter('date', 'lt', `${nextYear}-${formattedNextMonth}-01`)
@@ -213,28 +257,48 @@ const Summarize = () => {
           return;
         }
   
-        const entries: Array<string> = data.map((e: any) => e.journal_entry);
-        const generated_summary: string = await GenerateSummary(entries);
+        const journal_entries: Array<string> = data.map((e: any) => e.journal_entry);
+        const generated_summary: string = await GenerateSummary(journal_entries);
         
-        SaveSummary(months.indexOf(month), year, generated_summary);
+        const amountOfNoRatingEntries = data.reduce((acc, entry) => acc + (entry.rating == 1 ? 1 : 0), 0);
+        const sumOfRatings = data.reduce((acc, entry) => acc + (entry.rating == 11 ? 0 : entry.rating), 0); // Ignores entries with no rating (that's when rating == 1)
+        const average_rating = parseFloat((sumOfRatings / (data.length - amountOfNoRatingEntries)).toFixed(1));
+        setAverageRating(average_rating);
+        SaveSummary(months.indexOf(month), year, generated_summary, average_rating);
         setRawSummary(generated_summary);
         setSummary(generated_summary.substring(0, generated_summary.indexOf("**Highlights:**")).trim());
         const _highlights = generated_summary.match(/1\.(.*?)\n2\.(.*?)\n3\.(.*?)\./);
         setHighlights([_highlights![1].trim(), _highlights![2].trim(), _highlights![3].trim()]);
       } else {
         try {
-          setRawSummary(existingSummary);
-          if (!existingSummary.includes("**Highlights:**"))
+          if (existingSummary.average_rating == null) {
+            /**
+             * Since the average rating was added to the summaries in a later version of the app,
+             * this code is here for to calculate just the rating if it's not present.
+             */
+            const average_rating = await CalculateAverageRating(months.indexOf(month), year);
+            await SaveAverageRating(months.indexOf(month), year, average_rating);
+            setAverageRating(average_rating);
+          } else {
+            setAverageRating(existingSummary.average_rating);
+          }
+
+          const summary = existingSummary.summary;
+          setRawSummary(summary);
+          if (!summary.includes("**Highlights:**"))
             throw new TypeError("No **Highlights:** separator found");
-          setSummary(existingSummary.substring(0, existingSummary.indexOf("**Highlights:**")).trim());
-          const _highlights = existingSummary.match(/1\.(.*?)\n2\.(.*?)\n3\.(.*?)\./);
+          setSummary(summary.substring(0, summary.indexOf("**Highlights:**")).trim());
+          const _highlights = summary.match(/1\.(.*?)\n2\.(.*?)\n3\.(.*?)\./);
           setHighlights([_highlights![1].trim(), _highlights![2].trim(), _highlights![3].trim()]);
         } catch (err) {
           if (err instanceof TypeError) {
             console.error(err);
-            alert("The summary is formatted incorrectly. A new summary will be generated. The old summary has been copied to your clipboard.");
+            alert("The summary is formatted incorrectly. A new summary will be generated. The old summary has been copied to your clipboard, printed to console, " +
+              "and saved to localstorage under '__saved_summary__'.");
             await DeleteSummary(months.indexOf(month), year);
-            navigator.clipboard.writeText(existingSummary);
+            console.log("____OLD SUMMARY HERE____:", existingSummary.summary);
+            window.localStorage.setItem("__saved_summary__", existingSummary.summary);
+            navigator.clipboard.writeText(existingSummary.summary);
             window.location.reload();
           } else {
             throw err;
@@ -286,6 +350,7 @@ const Summarize = () => {
           <div className="card" style={{ "width": "36rem" }}>
             <div className="card-body">
               <h3 className="card-title">Summary for {month}, {year}</h3>
+              <h5>Average rating of <b>{averageRating} / 10</b></h5>
               {
                 editMode
                 ? <textarea
