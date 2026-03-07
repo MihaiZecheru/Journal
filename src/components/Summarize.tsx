@@ -134,8 +134,9 @@ async function CalculateAverageRating(month: number, year: number): Promise<numb
   }
 
   if (!data || data.length === 0) return 0;
-  const sum = data.reduce((acc, curr) => acc + curr.rating, 0);
-  const average = sum / data.length;
+  const sum = data.reduce((acc, curr) => acc + (curr.rating === 11 ? 0 : curr.rating), 0);
+  const amountOfNoRatingEntries = data.reduce((acc, curr) => acc + (curr.rating === 11 ? 1 : 0), 0);
+  const average = sum / (data.length - amountOfNoRatingEntries);
   return parseFloat(average.toFixed(1));
 }
 
@@ -260,8 +261,8 @@ const Summarize = () => {
         const journal_entries: Array<string> = data.map((e: any) => e.journal_entry);
         const generated_summary: string = await GenerateSummary(journal_entries);
         
-        const amountOfNoRatingEntries = data.reduce((acc, entry) => acc + (entry.rating == 1 ? 1 : 0), 0);
-        const sumOfRatings = data.reduce((acc, entry) => acc + (entry.rating == 11 ? 0 : entry.rating), 0); // Ignores entries with no rating (that's when rating == 1)
+        const amountOfNoRatingEntries = data.reduce((acc, entry) => acc + (entry.rating == 11 ? 1 : 0), 0);
+        const sumOfRatings = data.reduce((acc, entry) => acc + (entry.rating == 11 ? 0 : entry.rating), 0); // Ignores entries with no rating (that's when rating == 11)
         const average_rating = parseFloat((sumOfRatings / (data.length - amountOfNoRatingEntries)).toFixed(1));
         setAverageRating(average_rating);
         SaveSummary(months.indexOf(month), year, generated_summary, average_rating);
