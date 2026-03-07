@@ -3,11 +3,14 @@ import { useNavigate } from "react-router-dom";
 import supabase from "../database/config/supabase";
 import { User } from "@supabase/supabase-js";
 
+const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
 const Account = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState<User>();
   const [entryCount, setEntryCount] = useState<number>();
   const [summaryCount, setSummaryCount] = useState<number>();
+  const [bestMonth, setBestMonth] = useState<{ name: string, average_rating: string }>();
 
   useEffect(() => {
     (async () => {
@@ -50,6 +53,23 @@ const Account = () => {
       }
 
       setSummaryCount(_summary_count || 0);
+
+      // Get best month
+      const { data: bestMonthData, error: monthError } = await supabase
+        .from('Summaries')
+        .select('month, average_rating')
+        .eq('user_id', data.user.id)
+        .order('average_rating', { ascending: false }) // Sort from highest to lowest
+        .limit(1) // Return the top result (the highest score)
+        .maybeSingle();
+
+      if (monthError) {
+        alert(monthError);
+        console.error(monthError);
+        return;
+      }
+
+      setBestMonth({ name: months[bestMonthData?.month], average_rating:  bestMonthData?.average_rating})
     })();
   }, []);
 
@@ -108,7 +128,7 @@ const Account = () => {
   };
   
   return (
-    <div style={{ width: '100vw', height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', backgroundColor: 'whitesmoke' }}>
+    <div style={{ width: '100vw', height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', backgroundColor: 'whitesmoke', color: 'whitesmoke' }}>
       <main style={{ width: '25%', height: '60%', backgroundColor: '#708090', borderRadius: '1rem', padding: '1rem' }}>
         <div style={{ width: '100%', display: 'flex', justifyContent: 'center', padding: '2.5rem' }}>
           <img
@@ -137,6 +157,12 @@ const Account = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <b>Summaries generated</b>
             <b>{summaryCount}</b>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <b>Best Month</b>
+            {
+              bestMonth ? <b>{bestMonth?.name} - rated {bestMonth?.average_rating}</b> : <b>N/A</b>
+            }
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem' }}>
             <button style={{ backgroundColor: 'var(--fc-button-bg-color)', color: 'whitesmoke' }} onClick={downloadEntries}>Download Entries</button>
