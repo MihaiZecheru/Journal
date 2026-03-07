@@ -10,7 +10,7 @@ const Account = () => {
   const [user, setUser] = useState<User>();
   const [entryCount, setEntryCount] = useState<number>();
   const [summaryCount, setSummaryCount] = useState<number>();
-  const [bestMonth, setBestMonth] = useState<{ name: string, average_rating: string }>();
+  const [bestMonth, setBestMonth] = useState<{ name: string, year: number, average_rating: string }>();
 
   useEffect(() => {
     (async () => {
@@ -57,7 +57,7 @@ const Account = () => {
       // Get best month
       const { data: bestMonthData, error: monthError } = await supabase
         .from('Summaries')
-        .select('month, average_rating')
+        .select('month, year, average_rating')
         .eq('user_id', data.user.id)
         .order('average_rating', { ascending: false }) // Sort from highest to lowest
         .limit(1) // Return the top result (the highest score)
@@ -69,7 +69,7 @@ const Account = () => {
         return;
       }
 
-      setBestMonth({ name: months[bestMonthData?.month], average_rating:  bestMonthData?.average_rating})
+      setBestMonth({ name: months[bestMonthData?.month], year: bestMonthData?.year, average_rating:  bestMonthData?.average_rating})
     })();
   }, []);
 
@@ -161,7 +161,7 @@ const Account = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <b>Best Month</b>
             {
-              bestMonth ? <b>{bestMonth?.name} - rated {bestMonth?.average_rating}</b> : <b>N/A</b>
+              bestMonth ? <b>{bestMonth?.name} {bestMonth?.year} - rated {bestMonth?.average_rating}</b> : <b>N/A</b>
             }
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem' }}>
