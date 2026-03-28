@@ -1,8 +1,21 @@
 @import url('https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;400;500;600;700&display=swap');
 
+:root {
+  --journal-bg: #f1f5f9;
+  --journal-card-bg: #ffffff;
+  --journal-text: #0f172a;
+  --journal-text-muted: #64748b;
+  --journal-border: #e2e8f0;
+  --journal-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  --journal-shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.12);
+  --journal-radius: 16px;
+  --journal-radius-sm: 8px;
+}
+
 body {
   margin: 0;
   font-family: Comfortaa;
+  background-color: var(--journal-bg);
 }
 
 html, body {

@@ -1,0 +1,134 @@
+.shared-view-bg {
+  min-height: 100vh;
+  background: #0f172a;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 2rem 1rem;
+}
+
+.shared-view-card {
+  background: #1e293b;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 680px;
+  overflow: hidden;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.4);
+}
+
+.shared-view-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.shared-view-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #64748b;
+  margin: 0 0 0.35rem 0;
+}
+
+.shared-view-title {
+  color: #f1f5f9;
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.shared-view-body {
+  padding: 1.5rem;
+}
+
+.shared-view-text {
+  color: #cbd5e1;
+  font-size: 0.95rem;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.shared-view-highlights {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.shared-view-highlights-label {
+  color: #94a3b8;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0 0 0.75rem 0;
+}
+
+.shared-view-highlights-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.shared-view-highlights-list li {
+  color: #cbd5e1;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  padding-left: 1rem;
+  position: relative;
+}
+
+.shared-view-highlights-list li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: #6366f1;
+}
+
+.shared-view-footer {
+  padding: 0.875rem 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #475569;
+  font-size: 0.78rem;
+}
+
+.shared-view-expired {
+  color: #94a3b8;
+  font-size: 1rem;
+  margin: 0;
+  text-align: center;
+}
+
+.shared-view-expired-card {
+  background: #1e293b;
+  border-radius: 16px;
+  padding: 3rem 2rem;
+  text-align: center;
+  max-width: 420px;
+  width: 100%;
+}
+
+.shared-view-expired-icon {
+  font-size: 2.5rem;
+  color: #475569;
+  margin-bottom: 1rem;
+}
+
+.shared-view-expired-title {
+  color: #f1f5f9;
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem 0;
+}
+
+.shared-view-expired-sub {
+  color: #64748b;
+  font-size: 0.875rem;
+  margin: 0;
+}

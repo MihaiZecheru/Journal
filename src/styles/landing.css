@@ -5,39 +5,110 @@
   align-items: center;
   height: 100vh;
   width: 100vw;
-  background-color: #f5f5f5;
+  background: linear-gradient(135deg, #0f172a 0%, #1a3654 55%, #0d2137 100%);
+  position: relative;
+  overflow: hidden;
 }
 
-body {
-  overflow-y: hidden!important;
+.landing::before {
+  content: '';
+  position: absolute;
+  width: 600px;
+  height: 600px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.12) 0%, transparent 70%);
+  top: -150px;
+  right: -100px;
+  pointer-events: none;
+}
+
+.landing::after {
+  content: '';
+  position: absolute;
+  width: 450px;
+  height: 450px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(245, 158, 11, 0.08) 0%, transparent 70%);
+  bottom: -100px;
+  left: -80px;
+  pointer-events: none;
+}
+
+.landing-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  position: relative;
+  z-index: 1;
+}
+
+.landing-content a {
+  text-decoration: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.landing-logo-icon {
+  font-size: 3rem;
+  color: #f59e0b;
+  margin-bottom: 0.75rem;
+  filter: drop-shadow(0 4px 12px rgba(245, 158, 11, 0.4));
+}
+
+.landing-title {
+  color: #ffffff;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0;
+  text-shadow: 0 2px 20px rgba(0, 0, 0, 0.4);
+  line-height: 1.1;
+}
+
+.landing-tagline {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 1rem;
+  font-weight: 400;
+  margin: 0.25rem 0 2rem 0;
+  letter-spacing: 0.03em;
+}
+
+.landing {
+  overflow: hidden;
 }
 
 .no-highlight {
   user-select: none;
-  -webkit-user-select: none; /* Safari */
-  -moz-user-select: none; /* Firefox */
-  -ms-user-select: none; /* Internet Explorer/Edge */
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
 }
 
 .cssbuttons-io-button {
-  background: var(--fc-button-bg-color)!important;
+  background: linear-gradient(135deg, #f59e0b, #d97706) !important;
   color: white;
   font-family: inherit;
   padding: 0.35em;
   padding-left: 1.2em;
   font-size: 17px;
-  font-weight: 500;
+  font-weight: 600;
   border-radius: 0.9em;
   border: none;
   letter-spacing: 0.05em;
   display: flex;
   align-items: center;
-  box-shadow: inset 0 0 1.6em -0.6em var(--fc-button-bg-color)!important;
+  box-shadow: 0 6px 24px rgba(245, 158, 11, 0.45) !important;
   overflow: hidden;
   position: relative;
   height: 2.8em;
   padding-right: 3.3em;
   cursor: pointer;
+  transition: box-shadow 0.3s;
+}
+
+.cssbuttons-io-button:hover {
+  box-shadow: 0 8px 32px rgba(245, 158, 11, 0.6) !important;
 }
 
 .cssbuttons-io-button .icon {
@@ -50,7 +121,7 @@ body {
   height: 2.2em;
   width: 2.2em;
   border-radius: 0.7em;
-  box-shadow: 0.1em 0.1em 0.6em 0.2em var(--fc-button-bg-color)!important;
+  box-shadow: 0.1em 0.1em 0.6em 0.2em rgba(245, 158, 11, 0.4) !important;
   right: 0.3em;
   transition: all 0.3s;
 }
@@ -62,7 +133,7 @@ body {
 .cssbuttons-io-button .icon svg {
   width: 1.1em;
   transition: transform 0.3s;
-  color: var(--fc-button-bg-color)!important;
+  color: #d97706 !important;
 }
 
 .cssbuttons-io-button:hover .icon svg {
@@ -74,11 +145,21 @@ body {
 }
 
 .dynamic-font-size {
-  font-size: 1.5em;
+  font-size: 3rem;
+}
+
+@media screen and (max-width: 500px) {
+  .dynamic-font-size {
+    font-size: 2.2rem;
+  }
+
+  .landing-logo-icon {
+    font-size: 2.2rem;
+  }
 }
 
 @media screen and (max-width: 370px) {
   .dynamic-font-size {
-    font-size: 1.2em;
+    font-size: 1.8rem;
   }
 }

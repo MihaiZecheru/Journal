@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import supabase from "../database/config/supabase";
 import { User } from "@supabase/supabase-js";
+import '../styles/account.css';
 
 const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
@@ -29,7 +30,6 @@ const Account = () => {
         .from('Entries')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', data.user.id);
-        
 
       if (countError) {
         alert(countError);
@@ -44,7 +44,6 @@ const Account = () => {
         .from('Summaries')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', data.user.id);
-        
 
       if (countError1) {
         alert(countError1);
@@ -59,8 +58,8 @@ const Account = () => {
         .from('Summaries')
         .select('month, year, average_rating')
         .eq('user_id', data.user.id)
-        .order('average_rating', { ascending: false }) // Sort from highest to lowest
-        .limit(1) // Return the top result (the highest score)
+        .order('average_rating', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (monthError) {
@@ -69,26 +68,21 @@ const Account = () => {
         return;
       }
 
-      setBestMonth({ name: months[bestMonthData?.month], year: bestMonthData?.year, average_rating:  bestMonthData?.average_rating})
+      setBestMonth({ name: months[bestMonthData?.month], year: bestMonthData?.year, average_rating: bestMonthData?.average_rating })
     })();
   }, []);
 
   const exportToJSON = (data: any[], fileName: string) => {
-    // Convert the data to a JSON string
-    // The 'null, 2' arguments add indentation (pretty-printing) 
-    // so the file is human-readable. Use 'null, 0' for a smaller file size.
     const jsonContent = JSON.stringify(data, null, 2);
     const blob = new Blob([jsonContent], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    
-    // Trigger download
+
     const link = document.createElement("a");
     link.href = url;
     link.setAttribute("download", `${fileName.replace(/\.csv$/, '')}.json`);
     document.body.appendChild(link);
     link.click();
-    
-    // Clean up
+
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
@@ -126,52 +120,62 @@ const Account = () => {
 
     exportToJSON(summaries, `journal.mzecheru.com_summaries_${new Date().toLocaleDateString().replace('/', '-')}`);
   };
-  
+
   return (
-    <div style={{ width: '100vw', height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', backgroundColor: 'whitesmoke', color: 'whitesmoke' }}>
-      <main style={{ width: '25%', height: '60%', backgroundColor: '#708090', borderRadius: '1rem', padding: '1rem' }}>
-        <div style={{ width: '100%', display: 'flex', justifyContent: 'center', padding: '2.5rem' }}>
-          <img
-            style={{ width: '50%', cursor: 'pointer' }}
-            title="Click to return to home"
-            onClick={() => navigate('/home')} 
-            src="https://static.vecteezy.com/system/resources/previews/020/911/737/non_2x/user-profile-icon-profile-avatar-user-icon-male-icon-face-icon-profile-icon-free-png.png"
-          />
+    <div className="account-bg">
+      <div className="account-card">
+        <div className="account-header">
+          <div className="account-avatar" title="Click to return to home" onClick={() => navigate('/home')}>
+            <i className="fas fa-user"></i>
+          </div>
+          <p className="account-email">{user?.email}</p>
         </div>
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <b>{user?.email}</b>
-            <div>
-              <button style={{ backgroundColor: 'var(--fc-button-bg-color)', color: 'whitesmoke', marginRight: '.5rem' }} onClick={() => navigate('/home')}>Home</button>
-              <button style={{ backgroundColor: 'var(--fc-button-bg-color)', color: 'whitesmoke' }} onClick={() => navigate('/logout')}>Logout</button>
+
+        <div className="account-body">
+          <div className="account-stats">
+            <div className="account-stat-row">
+              <span className="account-stat-label">Member since</span>
+              <span className="account-stat-value">
+                {user?.created_at ? new Date(user.created_at).toDateString().substring(4) : '—'}
+              </span>
+            </div>
+            <div className="account-stat-row">
+              <span className="account-stat-label">Entries written</span>
+              <span className="account-stat-value">{entryCount ?? '—'}</span>
+            </div>
+            <div className="account-stat-row">
+              <span className="account-stat-label">Summaries generated</span>
+              <span className="account-stat-value">{summaryCount ?? '—'}</span>
+            </div>
+            <div className="account-stat-row">
+              <span className="account-stat-label">Best month</span>
+              <span className="account-stat-value">
+                {bestMonth ? `${bestMonth.name} ${bestMonth.year} · ${bestMonth.average_rating}` : 'N/A'}
+              </span>
             </div>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <b>Member since</b>
-            { user?.created_at && <b>{new Date(user?.created_at).toDateString().substring(4)}</b> }
+
+          <div className="account-actions">
+            <button className="btn btn-outline-primary" onClick={downloadEntries}>
+              <i className="fas fa-download me-1"></i> Entries
+            </button>
+            <button className="btn btn-outline-primary" onClick={downloadSummaries}>
+              <i className="fas fa-download me-1"></i> Summaries
+            </button>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <b>Entries written</b>
-            <b>{entryCount}</b>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <b>Summaries generated</b>
-            <b>{summaryCount}</b>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <b>Best Month</b>
-            {
-              bestMonth ? <b>{bestMonth?.name} {bestMonth?.year} - rated {bestMonth?.average_rating}</b> : <b>N/A</b>
-            }
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem' }}>
-            <button style={{ backgroundColor: 'var(--fc-button-bg-color)', color: 'whitesmoke' }} onClick={downloadEntries}>Download Entries</button>
-            <button style={{ backgroundColor: 'var(--fc-button-bg-color)', color: 'whitesmoke' }} onClick={downloadSummaries}>Download Summaries</button>
+
+          <div className="account-nav">
+            <button className="btn btn-primary" onClick={() => navigate('/home')}>
+              <i className="fas fa-home me-1"></i> Home
+            </button>
+            <button className="btn btn-outline-secondary" onClick={() => navigate('/logout')}>
+              <i className="fas fa-sign-out-alt me-1"></i> Logout
+            </button>
           </div>
         </div>
-      </main>
+      </div>
     </div>
   );
 }
- 
+
 export default Account;

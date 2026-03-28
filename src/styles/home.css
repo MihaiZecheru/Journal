@@ -1,77 +1,211 @@
+/* ─── Today's cell ───────────────────────────────────────────────────── */
 .fc-day-today {
-  background-color: var(--fc-button-bg-color)!important;
+  background-color: rgba(59, 130, 246, 0.1) !important;
 }
 
 .fc-day-today .fc-daygrid-day-number {
-  color: white!important;
+  color: #1d4ed8 !important;
+  font-weight: 700;
 }
 
+/* ─── Home wrapper ───────────────────────────────────────────────────── */
 .home {
   width: 100%;
-  height: 100%;
+  height: 100dvh;
 }
 
+/* ─── Calendar ───────────────────────────────────────────────────────── */
 .fc {
   max-width: 100vw;
-  max-height: 100vh;
 }
 
+/* ─── Toolbar header ─────────────────────────────────────────────────── */
+.fc .fc-toolbar.fc-header-toolbar {
+  background: #0f172a;
+  padding: 0.65rem 1rem !important;
+  margin-bottom: 0 !important;
+}
+
+.fc-toolbar-title {
+  color: #ffffff !important;
+  font-size: 1.1rem !important;
+  position: relative;
+  display: inline-block;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  cursor: pointer;
+}
+
+.fc-toolbar-title::after {
+  content: "Summarize month";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #1e293b;
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s;
+  pointer-events: none;
+  z-index: 1000;
+  margin-top: 4px;
+}
+
+.fc-toolbar-title:hover::after {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* ─── Toolbar buttons ────────────────────────────────────────────────── */
+.fc-button-primary {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  color: #ffffff !important;
+  border-radius: 8px !important;
+  font-size: 0.8rem !important;
+  font-weight: 500 !important;
+  padding: 0.3rem 0.65rem !important;
+  transition: background-color 0.15s, border-color 0.15s !important;
+}
+
+.fc-button-primary:hover {
+  background-color: rgba(255, 255, 255, 0.2) !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
+}
+
+.fc-button-primary:not(:disabled):active,
+.fc-button-primary:not(:disabled).fc-button-active {
+  background-color: rgba(255, 255, 255, 0.28) !important;
+  border-color: rgba(255, 255, 255, 0.38) !important;
+}
+
+.fc-button-primary:focus {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25) !important;
+}
+
+.fc-toolbar-chunk {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.fc-button-group {
+  gap: 0.35rem !important;
+}
+
+.fc-button-group .fc-button {
+  border-radius: 8px !important;
+  margin-left: 0 !important;
+}
+
+/* ─── Column headers ─────────────────────────────────────────────────── */
+.fc-col-header {
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+.fc-col-header-cell-cushion {
+  color: #64748b;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}
+
+/* ─── Day cell padding ───────────────────────────────────────────────── */
+.fc .fc-daygrid-day-frame {
+  padding: 4px !important;
+}
+
+.fc .fc-daygrid-day-top {
+  padding: 0 !important;
+}
+
+.fc .fc-daygrid-day-number {
+  padding: 0 !important;
+}
+
+.fc .fc-daygrid-day-events {
+  margin: 0 !important;
+  padding: 2px 0 0 0 !important;
+}
+
+/* ─── Day number ─────────────────────────────────────────────────────── */
+.fc-daygrid-day-number {
+  color: #334155;
+  font-size: 0.85rem;
+  font-weight: 500;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}
+
+/* ─── Rating color scale ─────────────────────────────────────────────── */
 :root {
-  --rating-1: #FF0000;
-  --rating-2: #FF3300;
-  --rating-3: #FF6600;
-  --rating-4: #FF9900;
-  --rating-5: #FFCC00;
-  --rating-6: #FFFF00;
-  --rating-7: #CCFF00;
-  --rating-8: #99FF00;
-  --rating-9: #66FF00;
-  --rating-10: #33FF00;
+  --rating-1: #FF3B30;
+  --rating-2: #FF6835;
+  --rating-3: #FF9F00;
+  --rating-4: #FFD000;
+  --rating-5: #F5F000;
+  --rating-6: #BCEC00;
+  --rating-7: #72D900;
+  --rating-8: #2DBD55;
+  --rating-9: #00B84C;
+  --rating-10: #30E070;
   --rating-empty: var(--mdb-light-gray);
 }
 
+/* ─── Rating slider ──────────────────────────────────────────────────── */
 .form-range {
   --current-rating-color: var(--rating-5);
 }
 
 .form-range::-webkit-slider-thumb {
-  background-color: var(--current-rating-color)!important;
+  background-color: var(--current-rating-color) !important;
 }
 
 .range .thumb::after {
-  background-color: var(--current-rating-color)!important;
+  background-color: var(--current-rating-color) !important;
 }
 
 .thumb-value {
-  color: var(--mdb-heading-color)!important;
+  color: var(--mdb-heading-color) !important;
 }
 
-.pointer-cursor {
-  cursor: pointer;
-}
-
+/* ─── Events ─────────────────────────────────────────────────────────── */
 .fc-h-event {
-  border: none!important;
+  border: none !important;
+}
+
+.fc-bg-event {
+  opacity: 0.85 !important;
 }
 
 .fc-daygrid-bg-harness {
-  color: black!important;
-  overflow: hidden!important;
+  color: black !important;
+  overflow: hidden !important;
 }
 
-#textAreaExample {
-  resize: none;
-  height: 40vh!important;
-  margin-bottom: 1rem;
-}
-
+/* ─── Loading cover ──────────────────────────────────────────────────── */
 .loading-cover {
   position: fixed;
   top: 0;
   left: 0;
   width: 100vw;
   height: 100vh;
-  background-color: var(--fc-button-bg-color);
+  background: linear-gradient(135deg, #0f172a 0%, #1a3654 55%, #0d2137 100%);
   color: white;
   z-index: 1000;
   display: flex;
@@ -79,13 +213,44 @@
   align-items: center;
 }
 
+.loading-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.75rem;
+}
+
+.loading-logo-icon {
+  font-size: 3rem;
+  color: #f59e0b;
+  filter: drop-shadow(0 4px 16px rgba(245, 158, 11, 0.45));
+}
+
+.journal-spinner {
+  color: rgba(255, 255, 255, 0.6) !important;
+  width: 2rem !important;
+  height: 2rem !important;
+}
+
+/* ─── Entry text area ────────────────────────────────────────────────── */
+#textAreaExample {
+  resize: none;
+  height: 40vh !important;
+  margin-bottom: 1rem;
+}
+
+/* ─── Misc ───────────────────────────────────────────────────────────── */
 label[for="customRange2"] {
   margin-bottom: 0;
 }
 
+.pointer-cursor {
+  cursor: pointer;
+}
+
 .badge-primary {
-  background-color: black!important;
-  color: white!important;
+  background-color: black !important;
+  color: white !important;
 }
 
 .add-custom-tracker-btn {
@@ -102,14 +267,6 @@ label[for="customRange2"] {
   margin-right: .5rem;
 }
 
-.fc-daygrid-day-number,
-.fc-col-header-cell-cushion {
-  user-select: none;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-}
-
 .mt-half {
   margin-top: .125rem;
 }
@@ -122,6 +279,7 @@ label[for="customRange2"] {
   font-size: 1.5rem;
 }
 
+/* ─── Icons grid ─────────────────────────────────────────────────────── */
 .icons-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(75px, 1fr));
@@ -148,6 +306,7 @@ label[for="customRange2"] {
   color: var(--mdb-primary);
 }
 
+/* ─── View entry box ─────────────────────────────────────────────────── */
 .view-entry-text-content-box {
   white-space: pre-wrap;
   border: var(--mdb-secondary) 1px solid;
@@ -155,8 +314,10 @@ label[for="customRange2"] {
   border-radius: .5rem;
 }
 
+/* ─── PrimeReact file upload ─────────────────────────────────────────── */
 .p-button {
   border-radius: .5rem;
+  height: 2.75rem;
 }
 
 .p-fileupload-buttonbar span.p-button.p-fileupload-choose {
@@ -173,15 +334,21 @@ label[for="customRange2"] {
   justify-content: space-between;
 }
 
-.image-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-  width: 90%;
-  max-width: 800px;
+@media screen and (max-width: 500px) {
+  .p-button {
+    width: 100%;
+    height: 1.5rem;
+    font-size: .75rem;
+  }
 }
 
-.image-item img {
+/* ─── Image grid ─────────────────────────────────────────────────────── */
+.image-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.image-grid img {
   width: 100%;
   height: auto;
   display: block;
@@ -194,28 +361,7 @@ label[for="customRange2"] {
   margin-right: .5rem;
 }
 
-.image-grid {
-  display: grid;
-  gap: 1rem;
-}
-.image-grid img {
-  width: 100%;
-  height: auto;
-  display: block;
-}
-
-.p-button {
-  height: 2.75rem;
-}
-
-@media screen and (max-width: 500px) {
-  .p-button {
-    width: 100%;
-    height: 1.5rem;
-    font-size: .75rem;
-  }
-}
-
+/* ─── Stars ──────────────────────────────────────────────────────────── */
 .fas.entry-modal-display-star,
 .fas.view-entry-modal-display-star,
 .fas.date-display-star {
@@ -231,35 +377,90 @@ label[for="customRange2"] {
   cursor: pointer;
 }
 
-.fc-toolbar-title {
-  position: relative;
-  display: inline-block;
-  user-select: none;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-  cursor: pointer;
+/* ─── Entry modal width ──────────────────────────────────────────────── */
+.entry-modal-dialog {
+  max-width: 600px;
 }
 
-.fc-toolbar-title::after {
-  content: "Summarize month";
-  position: absolute;
-  top: 100%; /* Position below the element */
-  left: 50%;
-  transform: translateX(-50%);
-  background-color: #333;
-  color: #fff;
-  padding: 5px;
-  border-radius: 3px;
-  white-space: nowrap;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.2s;
-  pointer-events: none; /* Prevent mouse events */
-  z-index: 1000;
+/* ─── Mobile ─────────────────────────────────────────────────────────── */
+@media screen and (max-width: 640px) {
+  /* Tighter toolbar */
+  .fc .fc-toolbar.fc-header-toolbar {
+    padding: 0.4rem 0.5rem !important;
+  }
+
+  .fc-toolbar-chunk {
+    gap: 0.2rem;
+  }
+
+  /* Smaller title */
+  .fc-toolbar-title {
+    font-size: 0.85rem !important;
+  }
+
+  /* Hide tooltip on mobile (no hover) */
+  .fc-toolbar-title::after {
+    display: none;
+  }
+
+  /* Hide year-jump buttons to save horizontal space */
+  .fc-prevYear-button,
+  .fc-nextYear-button {
+    display: none !important;
+  }
+
+  /* Shrink all toolbar buttons */
+  .fc-button-primary {
+    font-size: 0.72rem !important;
+    padding: 0.25rem 0.45rem !important;
+  }
+
+  /* Icon-only custom buttons: hide text, keep icon */
+  .fc-custom-btn-button {
+    font-size: 0 !important;
+    padding: 0.25rem 0.5rem !important;
+  }
+
+  .fc-custom-btn-button i {
+    font-size: 0.9rem !important;
+    margin-right: 0 !important;
+  }
+
+  /* Entry modal: full-width on mobile */
+  .entry-modal-dialog {
+    max-width: calc(100vw - 1rem);
+    margin: 0.5rem auto;
+  }
+
+  /* Smaller day numbers */
+  .fc-daygrid-day-number {
+    font-size: 0.72rem;
+  }
+
+  /* Smaller column headers */
+  .fc-col-header-cell-cushion {
+    font-size: 0.65rem;
+  }
+
+  /* Text area: shorter on mobile */
+  #textAreaExample {
+    height: 30vh !important;
+  }
 }
 
-.fc-toolbar-title:hover::after {
-  opacity: 1;
-  visibility: visible;
+/* ─── Modals ─────────────────────────────────────────────────────────── */
+.modal-content {
+  border-radius: 16px !important;
+  border: none !important;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.15) !important;
+  overflow: hidden;
+}
+
+.modal-header {
+  padding: 1rem 1.25rem !important;
+}
+
+.modal-footer {
+  padding: 0.75rem 1.25rem !important;
+  border-top: 1px solid #e2e8f0 !important;
 }

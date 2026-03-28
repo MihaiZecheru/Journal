@@ -3,15 +3,19 @@ import '../styles/landing.css';
 
 const Landing = () => {
   const navigate = useNavigate();
-  
+
   const onBtnClick = () => {
     setTimeout(() => navigate('/login'), 250);
   };
 
   return (
     <div className="landing">
-      <Link to="/home"><h1 className="no-highlight dynamic-font-size">Remember every day with Journal</h1></Link>
-      <div className="no-highlight d-flex align-items-center">
+      <div className="landing-content no-highlight">
+        <Link to="/home">
+          <i className="fas fa-book-open landing-logo-icon"></i>
+          <h1 className="dynamic-font-size landing-title">Journal</h1>
+        </Link>
+        <p className="landing-tagline">Remember every day</p>
         <button className="cssbuttons-io-button" onClick={ onBtnClick }>
           Get started
           <div className="icon">

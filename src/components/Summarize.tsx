@@ -1,8 +1,9 @@
 import "../styles/summarize.css";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import supabase from "../database/config/supabase";
 import { GetUserID } from "../database/GetUser";
+import { createShareLink } from "../database/createShareLink";
 
 function capitalizeFirstLetter(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
@@ -168,7 +169,10 @@ const Summarize = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [editMode, setEditMode] = useState<boolean>(false);
   const [rawSummary, setRawSummary] = useState<string>();
+  const [savedRawSummary, setSavedRawSummary] = useState<string>();
   const [averageRating, setAverageRating] = useState<number>();
+  const [shareLabel, setShareLabel] = useState<'Share' | 'Copied!'>('Share');
+  const shareCache = useRef<{ url: string; time: number } | null>(null);
   
   if (!params.year || !params.month) {
     navigate('/home');
@@ -318,6 +322,12 @@ const Summarize = () => {
   }, [navigate]);
 
   const editTextAreaKeyDown = async (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setRawSummary(savedRawSummary);
+      setEditMode(false);
+      return;
+    }
     if (event.ctrlKey && (event.key === "Enter" || event.key === "s")) {
       event.preventDefault();
       setEditMode(false);
@@ -330,11 +340,12 @@ const Summarize = () => {
     <div className="summarize" key={`${month}-${year}`}>
       {
         loading ?
-        
-        <div className="card" style={{ "width": "36rem" }}>
-          <div className="card-body">
-            <h3 className="card-title">Summarizing {month}, {year}</h3>
-            <div className="placeholder-wave">
+
+        <div className="summary-card">
+          <div className="summary-card-body">
+            <p className="summary-month-label">Generating summary</p>
+            <h2 className="summary-title">{month}, {year}</h2>
+            <div className="placeholder-wave mt-3">
               <span className="placeholder col-8"></span>
               <br />
               <span className="placeholder col-9"></span>
@@ -348,44 +359,79 @@ const Summarize = () => {
         </div>
         : (
           summaryError === null ?
-          <div className="card" style={{ "width": "36rem" }}>
-            <div className="card-body">
-              <h3 className="card-title">Summary for {month}, {year}</h3>
-              <h5>Average rating of <b>{averageRating} / 10</b></h5>
+          <div className="summary-card">
+            <div className="summary-card-body">
+              <p className="summary-month-label">Summary</p>
+              <h2 className="summary-title">{month}, {year}</h2>
+              <p className="summary-rating">Average rating: <strong>{averageRating} / 10</strong></p>
               {
                 editMode
                 ? <textarea
-                    className="card-text"
+                    className="summary-edit-textarea"
                     title="Ctrl+Enter to save"
-                    style={{ width: '100%', height: '250px', padding: '1rem' }}
                     onKeyDown={editTextAreaKeyDown}
                     value={rawSummary}
                     onChange={(e) => setRawSummary(e.target.value)} />
-                : <p className="card-text">{summary} <i className="fas fa-pen-to-square" style={{ cursor: 'pointer' }} onClick={() => setEditMode(!editMode)}></i></p>
+                : <p className="summary-body">{summary} <i className="fas fa-pen-to-square summary-edit-icon" onClick={() => { setSavedRawSummary(rawSummary); setEditMode(true); }}></i></p>
               }
+
+              <div className="summary-highlights">
+                <p className="summary-highlights-label">Highlights</p>
+                <ul className="summary-highlights-list">
+                  <li>{highlights![0]}</li>
+                  <li>{highlights![1]}</li>
+                  <li>{highlights![2]}.</li>
+                </ul>
+              </div>
             </div>
-            <h5 className="card-header">Important Highlights</h5>
-            <ul className="list-group list-group-light list-group-small">
-              <li className="list-group-item px-4">{highlights![0]}</li>
-              <li className="list-group-item px-4">{highlights![1]}</li>
-              <li className="list-group-item px-4">{highlights![2]}.</li>
-            </ul>
-            <div className="card-body d-flex justify-content-between">
-            <a role="button" className="card-link" onClick={ () => goToPreviousMonth(month, year) }>Previous month</a>
-              <a role="button" className="card-link" onClick={ () => navigate('/home') }>Back to home</a>
-              <a role="button" className="card-link" onClick={ () => goToNextMonth(month, year) }>Next month</a>
+
+            <div className="summary-nav">
+              <button className="summary-nav-btn" onClick={ () => goToPreviousMonth(month, year) }>
+                <i className="fas fa-chevron-left"></i> Prev
+              </button>
+              <button className="summary-nav-btn summary-nav-btn--home" onClick={ () => navigate('/home') }>
+                <i className="fas fa-home"></i> Home
+              </button>
+              <button className="summary-nav-btn" onClick={ async () => {
+                try {
+                  let url: string;
+                  if (shareCache.current && Date.now() - shareCache.current.time < 30_000) {
+                    url = shareCache.current.url;
+                  } else {
+                    url = await createShareLink('summary', `${month} ${year}`, rawSummary!);
+                    shareCache.current = { url, time: Date.now() };
+                  }
+                  await navigator.clipboard.writeText(url);
+                  setShareLabel('Copied!');
+                  setTimeout(() => setShareLabel('Share'), 2000);
+                } catch (e) {
+                  alert('Failed to create share link.');
+                }
+              }}>
+                <i className="fas fa-link"></i> {shareLabel}
+              </button>
+              <button className="summary-nav-btn" onClick={ () => goToNextMonth(month, year) }>
+                Next <i className="fas fa-chevron-right"></i>
+              </button>
             </div>
           </div>
           :
-          <div className="card" style={{ "width": "36rem" }}>
-            <div className="card-body">
-              <h3 className="card-title">Summary for {month}, {year}</h3>
-              <p className="card-text">{summaryError}</p>
+          <div className="summary-card">
+            <div className="summary-card-body">
+              <p className="summary-month-label">Summary</p>
+              <h2 className="summary-title">{month}, {year}</h2>
+              <p className="summary-body">{summaryError}</p>
             </div>
-            <div className="card-body d-flex justify-content-between">
-              <a role="button" className="card-link" onClick={ () => goToPreviousMonth(month, year) }>Previous month</a>
-              <a role="button" className="card-link" onClick={ () => navigate('/home') }>Back to home</a>
-              <a role="button" className="card-link" onClick={ () => goToNextMonth(month, year) }>Next month</a>
+            <div className="summary-nav">
+              <button className="summary-nav-btn" onClick={ () => goToPreviousMonth(month, year) }>
+                <i className="fas fa-chevron-left"></i> Prev
+              </button>
+              <button className="summary-nav-btn summary-nav-btn--home" onClick={ () => navigate('/home') }>
+                <i className="fas fa-home"></i> Home
+              </button>
+              <button className="summary-nav-btn" onClick={ () => goToNextMonth(month, year) }>
+                Next <i className="fas fa-chevron-right"></i>
+              </button>
             </div>
           </div>
         )

@@ -17,6 +17,7 @@ import icons from '../icons';
 import { useNavigate } from 'react-router-dom';
 import fileDownload from 'js-file-download'
 import { UserID } from '../database/ID';
+import { createShareLink } from '../database/createShareLink';
 
 function mobileCheck() {
   let check = false;
@@ -34,7 +35,7 @@ function GetTodaysDate(): TDateString {
 
 const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const colors = ['#FF0000', '#FF3300', '#FF6600', '#FF9900', '#FFCC00', '#FFFF00', '#CCFF00', '#99FF00', '#66FF00', '#33FF00', '#bdbdbd']; // gray at the end
+const colors = ['#FF3B30', '#FF6835', '#FF9F00', '#FFD000', '#F5F000', '#BCEC00', '#72D900', '#2DBD55', '#00B84C', '#30E070', '#bdbdbd']; // gray at the end
 
 function sort_custom_trackers(trackers: CustomTracker[]): CustomTracker[] {
   // Sort the custom trackers so that text-input trackers are first and checkbox trackers are last
@@ -122,6 +123,11 @@ const Home = () => {
   const viewEntryModalTitle = useRef<HTMLHeadingElement>(null);
   const viewEntryModalRatingDisplay = useRef<HTMLSpanElement>(null);
   const viewEntryModalStarredDisplay = useRef<HTMLDivElement>(null);
+  const currentViewEntry = useRef<Entry | null>(null);
+  const [shareEntryLabel, setShareEntryLabel] = useState<'Share' | 'Copied!'>('Share');
+  const [shareEditLabel, setShareEditLabel] = useState<'Share' | 'Copied!'>('Share');
+  const viewShareCache = useRef<{ url: string; time: number } | null>(null);
+  const editShareCache = useRef<{ url: string; time: number } | null>(null);
 
   // View memories modal
   const viewMemoriesModal = useRef<HTMLDivElement>(null);
@@ -134,7 +140,13 @@ const Home = () => {
   const viewEntryMemoriesModalBody = useRef<HTMLDivElement>(null);
   const viewEntryMemoriesModalDateDisplay = useRef<HTMLSpanElement>(null);
   
-  const [loading, setLoading] = useState<boolean>(true);
+  // Start with no loading screen if a cache entry already exists in sessionStorage
+  const [loading, setLoading] = useState<boolean>(() => {
+    for (let i = 0; i < sessionStorage.length; i++) {
+      if (sessionStorage.key(i)?.startsWith('journal_home_cache_')) return false;
+    }
+    return true;
+  });
   const [editMode, setEditMode] = useState<boolean>(false);
   const entries = useRef<Entry[]>([]);
 
@@ -143,35 +155,49 @@ const Home = () => {
     const timeStamp = Date.now();
     if (mobileCheck()) document.body.classList.add('mobile');
 
+    // Synchronously find and apply any existing cache before the first await,
+    // so the calendar is populated on the same frame as the initial render.
+    let existingCacheKey: string | null = null;
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key?.startsWith('journal_home_cache_')) { existingCacheKey = key; break; }
+    }
+
+    if (existingCacheKey) {
+      const cached = sessionStorage.getItem(existingCacheKey)!;
+      const { entries: cachedEntries, customTrackers: cachedTrackers } = JSON.parse(cached);
+      entries.current = cachedEntries as Entry[];
+      loadCalendar(cachedEntries as Entry[], calendar.current!.getApi());
+      setCustomTrackers(sort_custom_trackers(cachedTrackers as CustomTracker[]));
+    }
+
     (async () => {
-      const { data, error } = await supabase
-        .from('Entries')
-        .select()
-        .eq('user_id', await GetUserID());
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = (session?.user?.id ?? await GetUserID()) as UserID;
+      const cacheKey = `journal_home_cache_${userId}`;
 
-      if (error) {
-        console.error(`Error fetching entries: ${error.message}`);
-        throw error;
+      // Always refresh from the database (background if cache was found, foreground if not)
+      const [{ data: freshEntries, error }, { data: freshTrackers, error: error1 }] = await Promise.all([
+        supabase.from('Entries').select().eq('user_id', userId),
+        supabase.from('CustomTrackers').select().eq('user_id', userId),
+      ]);
+
+      if (error) { console.error(`Error fetching entries: ${error.message}`); throw error; }
+      if (error1) { console.error(`Error fetching custom trackers: ${error1.message}`); throw error1; }
+
+      // Remove a stale cache from a different user if present
+      if (existingCacheKey && existingCacheKey !== cacheKey) sessionStorage.removeItem(existingCacheKey);
+
+      sessionStorage.setItem(cacheKey, JSON.stringify({ entries: freshEntries, customTrackers: freshTrackers }));
+      entries.current = (freshEntries ?? []) as Entry[];
+      loadCalendar((freshEntries ?? []) as Entry[], calendar.current!.getApi());
+      setCustomTrackers(sort_custom_trackers((freshTrackers ?? []) as CustomTracker[]));
+
+      if (!existingCacheKey) {
+        // First visit — keep the loading screen up for the minimum duration
+        while (Date.now() - timeStamp < 1500) continue;
+        setLoading(false);
       }
-
-      entries.current = data as Entry[];
-      loadCalendar(data as Entry[], calendar.current!.getApi());
-
-      const { data: data1, error: error1 } = await supabase
-        .from('CustomTrackers')
-        .select()
-        .eq('user_id', await GetUserID());
-
-      if (error1) {
-        console.error(`Error fetching custom trackers: ${error1.message}`);
-        throw error;
-      }
-
-      setCustomTrackers(sort_custom_trackers(data1));
-
-      // If a 1.5 seconds haven't passed, wait until they have
-      while (Date.now() - timeStamp < 1500) continue;
-      setLoading(false);
     })();
   }, []);
 
@@ -273,6 +299,9 @@ const Home = () => {
         entries.current.map((entry: Entry) => entry.date === existingEntry.date ? existingEntry : entry);
       });
       const color = colors[existingEntry.rating - 1];
+      currentViewEntry.current = existingEntry;
+      setShareEntryLabel('Share');
+      viewShareCache.current = null;
 			viewEntryModal.current!.setAttribute('data-startstr', existingEntry.date);
       viewEntryModalTitle.current!.parentElement!.style.backgroundColor = color;
       viewEntryModalBody.current!.innerHTML = `
@@ -329,6 +358,8 @@ const Home = () => {
       return new Modal(viewEntryModal.current).show();
     // Show create/edit entry modal
     } else {
+      setShareEditLabel('Share');
+      editShareCache.current = null;
       // Check for any locally saved draft when creating an entry
       // Open the entryModal with the locally saved draft
       const locallySavedEntryData = window.localStorage.getItem("entry-modal-draft");
@@ -834,10 +865,11 @@ const Home = () => {
         dayMaxEvents={ true }
         select={ handleDateSelect }
         eventContent={ customCalendarRendering }
+        height="100%"
       />
 
       <div className="modal fade" tabIndex={ -1 } ref={ entryModal } aria-labelledby="entry-modal-label">
-        <div className="modal-dialog">
+        <div className="modal-dialog entry-modal-dialog">
           <div className="modal-content">
             <div className="modal-header">
               <h5 className="modal-title" id="entry-modal-label" ref={ entryModalTitle }>Modal title (dynamically changed)</h5>
@@ -920,7 +952,26 @@ const Home = () => {
               }}>Delete All Memories</button>
             </div>
 
-            <div className="modal-footer">
+            <div className="modal-footer d-flex flex-wrap gap-2">
+              <button type="button" className="btn btn-secondary" data-mdb-ripple-init onClick={ async () => {
+                try {
+                  const cache = editShareCache.current;
+                  let url: string;
+                  if (cache && Date.now() - cache.time < 30_000) {
+                    url = cache.url;
+                  } else {
+                    const title = entryModalTitle.current!.textContent!;
+                    const text = entryModalTextArea.current!.value;
+                    url = await createShareLink('entry', title, text);
+                    editShareCache.current = { url, time: Date.now() };
+                  }
+                  await navigator.clipboard.writeText(url);
+                  setShareEditLabel('Copied!');
+                  setTimeout(() => setShareEditLabel('Share'), 2000);
+                } catch (e) {
+                  alert('Failed to create share link.');
+                }
+              }}><i className="fas fa-link me-1"></i>{shareEditLabel}</button>
               <button type="button" className="btn btn-secondary" data-mdb-ripple-init data-mdb-dismiss="modal">Close</button>
               <button type="button" className="btn btn-danger visually-hidden" data-mdb-ripple-init data-mdb-dismiss="modal" onClick={ () => {
                 const proceed = window.confirm('Are you sure you want to delete this entry?');
@@ -1093,14 +1144,34 @@ const Home = () => {
 
             </div>
             <div className="modal-footer d-flex justify-content-between align-items-center">
-              <div>
-                <button type="button" className="btn btn-secondary me-2" data-mdb-ripple-init onClick={ async () => {
+              <div className="d-flex flex-wrap gap-2">
+                <button type="button" className="btn btn-secondary" data-mdb-ripple-init onClick={ async () => {
+                  const entry = currentViewEntry.current;
+                  if (!entry) return;
+                  try {
+                    const cache = viewShareCache.current;
+                    let url: string;
+                    if (cache && Date.now() - cache.time < 30_000) {
+                      url = cache.url;
+                    } else {
+                      const title = viewEntryModalTitle.current!.textContent!;
+                      url = await createShareLink('entry', title, entry.journal_entry);
+                      viewShareCache.current = { url, time: Date.now() };
+                    }
+                    await navigator.clipboard.writeText(url);
+                    setShareEntryLabel('Copied!');
+                    setTimeout(() => setShareEntryLabel('Share'), 2000);
+                  } catch (e) {
+                    alert('Failed to create share link.');
+                  }
+                }}><i className="fas fa-link me-1"></i>{shareEntryLabel}</button>
+                <button type="button" className="btn btn-secondary" data-mdb-ripple-init onClick={ async () => {
                   const date = viewEntryModal.current!.getAttribute('data-startstr')!;
                   await setupViewMemoriesModal(date);
                   viewEntryMemoriesModalDateDisplay.current!.textContent = `${months[parseInt(date.split('-')[1]) - 1]} ${date.split('-')[2]}, ${date.substring(0, 4)}`;
                   new Modal(viewEntryMemoriesModal.current!).show();
                 }}><span>View Memories</span><span className="badge rounded-pill badge-dark ms-2">{ viewMemoriesModalFiles.length }</span></button>
-                <button type="button" className="btn btn-danger me-2" data-mdb-ripple-init data-mdb-dismiss="modal" onClick={() => {
+                <button type="button" className="btn btn-danger" data-mdb-ripple-init data-mdb-dismiss="modal" onClick={() => {
                   const proceed = window.confirm('Are you sure you want to delete this entry?');
                   if (proceed) entryModalDelete(viewEntryModal.current!.getAttribute('data-startstr')!);
                 }}>Delete</button>
