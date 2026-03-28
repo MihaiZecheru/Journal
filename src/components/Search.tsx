@@ -11,6 +11,14 @@ const COLORS = ['#FF3B30', '#FF6835', '#FF9F00', '#FFD000', '#F5F000', '#BCEC00'
 
 const MONTH_NAMES = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
 const WEEKDAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+// months are 1-indexed; endMonth0 is 0-indexed (for comparing against Date.getMonth())
+const SEASONS: Record<string, { months: number[]; endMonth0: number }> = {
+  spring: { months: [3, 4, 5],    endMonth0: 4  },
+  summer: { months: [6, 7, 8],    endMonth0: 7  },
+  fall:   { months: [9, 10, 11],  endMonth0: 10 },
+  autumn: { months: [9, 10, 11],  endMonth0: 10 },
+  winter: { months: [12, 1, 2],   endMonth0: 1  }, // Dec of year Y, Jan+Feb of year Y+1
+};
 
 async function GetAllUserEntries(user_id: UserID): Promise<Entry[]> {
   const { data, error } = await supabase
@@ -157,6 +165,42 @@ function getTimeFilteredEntries(question: string, allEntries: Entry[]): Entry[] 
     return allEntries.filter(e => e.date.startsWith(`${year}-${monthStr}`));
   }
 
+  // Season detection ("last summer", "this winter", "summer 2025", "in the fall", etc.)
+  for (const [season, { months, endMonth0 }] of Object.entries(SEASONS)) {
+    if (!new RegExp(`\\b${season}\\b`).test(q)) continue;
+
+    const yearMatch = q.match(/\b(20\d{2})\b/);
+
+    const filterBySeason = (targetYear: number) =>
+      allEntries.filter(e => {
+        const [y, m] = e.date.split('-').map(Number);
+        if (season === 'winter') {
+          return (y === targetYear && m === 12) || (y === targetYear + 1 && (m === 1 || m === 2));
+        }
+        return y === targetYear && months.includes(m);
+      });
+
+    if (yearMatch) {
+      return filterBySeason(Number(yearMatch[1]));
+    }
+
+    const isThis = q.includes(`this ${season}`);
+    let targetYear: number;
+
+    if (season === 'winter') {
+      if (isThis) {
+        targetYear = currentMonth === 11 ? currentYear : currentYear - 1;
+      } else {
+        // most recent completed winter
+        targetYear = currentMonth <= 1 ? currentYear - 2 : currentYear - 1;
+      }
+    } else {
+      targetYear = isThis ? currentYear : (currentMonth > endMonth0 ? currentYear : currentYear - 1);
+    }
+
+    return filterBySeason(targetYear);
+  }
+
   // Standalone year: "in 2024", "during 2025"
   const yearOnly = q.match(/\b(20\d{2})\b/);
   if (yearOnly) {
@@ -272,6 +316,7 @@ const Search = () => {
   const [expandableIndices, setExpandableIndices] = useState<Set<number>>(new Set());
   const [showInfo, setShowInfo] = useState(false);
   const [isAiMode, setIsAiMode] = useState(false);
+  const [preferNewer, setPreferNewer] = useState(true);
   const [aiModalOpen, setAiModalOpen] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResponse, setAiResponse] = useState<string | null>(null);
@@ -368,16 +413,21 @@ const Search = () => {
           let relevant: Entry[];
           const timeFiltered = getTimeFilteredEntries(question, allEntries!);
 
+          const MAX_ENTRIES = 100;
+
           if (timeFiltered !== null && timeFiltered.length > 0) {
             // Skip keyword expansion — send all entries for that period directly
             progressCeilingRef.current = 95;
-            relevant = timeFiltered;
+            relevant = timeFiltered.length > MAX_ENTRIES
+              ? (preferNewer ? timeFiltered.slice(-MAX_ENTRIES) : timeFiltered.slice(0, MAX_ENTRIES))
+              : timeFiltered;
           } else {
             const keywords = await expandSearchKeywords(question, controller.signal);
             setAiProgress(42);
             progressCeilingRef.current = 95;
-            relevant = filterEntriesByKeywords(allEntries!, keywords);
-            if (relevant.length === 0) relevant = allEntries!.slice(-30);
+            let filtered = filterEntriesByKeywords(allEntries!, keywords);
+            if (filtered.length === 0) filtered = allEntries!.slice(-30);
+            relevant = preferNewer ? filtered.slice(-MAX_ENTRIES) : filtered.slice(0, MAX_ENTRIES);
           }
 
           const answer = await runAiSearch(question, relevant, controller.signal);
@@ -480,6 +530,18 @@ const Search = () => {
             </div>
           )}
         </div>
+
+        {isAiMode && (
+          <div className="search-sort-toggle">
+            <span className="ai-pref-label">{preferNewer ? 'Newer' : 'Older'}</span>
+            <button
+              className={`ai-pref-slider${preferNewer ? ' newer' : ' older'}`}
+              onClick={() => setPreferNewer(p => !p)}
+              aria-label="Toggle entry preference"
+              title="Controls whether the AI pulls from your newer or older entries when searching"
+            />
+          </div>
+        )}
 
         <div className="search-sort-toggle">
           <input

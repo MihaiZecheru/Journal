@@ -249,6 +249,55 @@
   line-height: 1;
 }
 
+/* ─── AI entry preference slider ────────────────────────────────────── */
+.ai-pref-label {
+  color: #94a3b8;
+  font-size: 0.875rem;
+  user-select: none;
+  min-width: 2.5rem;
+  text-align: right;
+}
+
+.ai-pref-slider {
+  position: relative;
+  width: 2.4rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+
+.ai-pref-slider.newer {
+  background: var(--fc-button-bg-color, #1266f1);
+}
+
+.ai-pref-slider.older {
+  background: #475569;
+}
+
+.ai-pref-slider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 50%;
+  background: #fff;
+  transform: translateY(-50%);
+  transition: left 0.2s;
+}
+
+.ai-pref-slider.newer::after {
+  left: calc(100% - 0.95rem - 1px);
+}
+
+.ai-pref-slider.older::after {
+  left: 2px;
+}
+
 /* ─── AI modal ───────────────────────────────────────────────────────── */
 .ai-modal-overlay {
   position: fixed;

@@ -90,8 +90,8 @@ async function GenerateSearchKeywords(question) {
     contents: [{
       role: "user",
       parts: [{
-        text: `You are helping search a personal journal. Given a question, return a JSON array of 10-15 words that someone might realistically write in a personal diary when describing the topic of this question. 
-Think broadly: include synonyms, brand names, casual language, abbreviations, and related concepts. This is going to be used for a keyword-based search. Return ONLY a valid JSON array of lowercase strings, no markdown, no explanation.
+        text: `You are helping search a personal journal. Given a question, return a JSON array of up to 15 words that someone might realistically write in a personal diary when describing the topic of this question. You do not need to generate all 15 if fewer keywords are sufficient to cover the topic.
+Think broadly: include synonyms, brand names, casual language, abbreviations, and related concepts. Avoid extremely broad or common words like "him", "the", "and", "went", "got", "was", "my", etc. that would match almost any entry. This is going to be used for a keyword-based search. Return ONLY a valid JSON array of lowercase strings, no markdown, no explanation.
 
 Question: ${question}`
       }]
@@ -111,7 +111,8 @@ app.post('/api/generate-summary', (req, res) => {
   }
 
   GenerateSummary(entries)
-    .then((response) => res.status(200).json({ summary: response, error: null }));
+    .then((response) => res.status(200).json({ summary: response, error: null }))
+    .catch((err) => res.status(500).json({ error: err.message, summary: null }));
 });
 
 app.post('/api/ai-search', (req, res) => {
@@ -122,7 +123,8 @@ app.post('/api/ai-search', (req, res) => {
   }
 
   SearchWithAI(question, entries)
-    .then((response) => res.status(200).json({ answer: response, error: null }));
+    .then((response) => res.status(200).json({ answer: response, error: null }))
+    .catch((err) => res.status(500).json({ error: err.message, answer: null }));
 });
 
 app.post('/api/generate-search-keywords', (req, res) => {
