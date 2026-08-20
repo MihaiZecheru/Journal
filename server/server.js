@@ -139,6 +139,10 @@ app.post('/api/generate-search-keywords', (req, res) => {
     .catch((err) => res.status(500).json({ error: err.message, keywords: null }));
 });
 
+app.post('/share-target', (req, res) => {
+  res.redirect(303, '/home?shared_photos=1');
+});
+
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, build_name, 'index.html'));
 });

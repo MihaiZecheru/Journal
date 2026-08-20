@@ -18,6 +18,8 @@ import { useNavigate } from 'react-router-dom';
 import fileDownload from 'js-file-download'
 import { UserID } from '../database/ID';
 import { createShareLink } from '../database/createShareLink';
+import { getPhotoDate, generateMemoriesFileName } from '../utils/exifUtils';
+import { getPendingSharedPhotos, clearSharedPhotos } from '../utils/sharedPhotosDb';
 
 function mobileCheck() {
   let check = false;
@@ -140,6 +142,140 @@ const Home = () => {
   const viewEntryMemoriesModalBody = useRef<HTMLDivElement>(null);
   const viewEntryMemoriesModalDateDisplay = useRef<HTMLSpanElement>(null);
   
+  // Upload memories modal
+  const uploadMemoriesModal = useRef<HTMLDivElement>(null);
+  const [batchFiles, setBatchFiles] = useState<{ file: File; date: string; previewUrl: string }[]>([]);
+  const [isUploadingBatch, setIsUploadingBatch] = useState<boolean>(false);
+  const [batchUploadStatus, setBatchUploadStatus] = useState<string>('');
+
+  const handleBatchFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const filesArray = Array.from(e.target.files);
+    const parsedFiles: { file: File; date: string; previewUrl: string }[] = [];
+
+    for (const file of filesArray) {
+      const date = await getPhotoDate(file);
+      const previewUrl = URL.createObjectURL(file);
+      parsedFiles.push({ file, date, previewUrl });
+    }
+
+    setBatchFiles((prev) => [...prev, ...parsedFiles]);
+    e.target.value = '';
+  };
+
+  const processBatchUpload = async () => {
+    if (batchFiles.length === 0) return;
+    setIsUploadingBatch(true);
+    setBatchUploadStatus('Preparing upload...');
+
+    try {
+      const userID = await GetUserID();
+      const groupedByDate: Record<string, File[]> = {};
+      batchFiles.forEach((item) => {
+        if (!groupedByDate[item.date]) groupedByDate[item.date] = [];
+        groupedByDate[item.date].push(item.file);
+      });
+
+      const dates = Object.keys(groupedByDate);
+      let totalUploaded = 0;
+
+      for (let i = 0; i < dates.length; i++) {
+        const date = dates[i];
+        const filesForDate = groupedByDate[date];
+
+        const { data: existingFiles, error: listErr } = await supabase.storage
+          .from('Memories')
+          .list(`${userID}/${date}`, { limit: 10000 });
+
+        if (listErr) console.error(`Error checking memories for ${date}:`, listErr);
+
+        const existingCount = existingFiles ? existingFiles.length : 0;
+
+        for (let j = 0; j < filesForDate.length; j++) {
+          const file = filesForDate[j];
+          const customName = generateMemoriesFileName(userID, date, existingCount, j + 1, file.name);
+
+          setBatchUploadStatus(`Uploading photo ${totalUploaded + 1}/${batchFiles.length} (${date})...`);
+
+          const { error: uploadErr } = await supabase.storage
+            .from('Memories')
+            .upload(`${userID}/${date}/${customName}`, file, { upsert: true });
+
+          if (uploadErr) {
+            console.error(`Error uploading ${customName}:`, uploadErr);
+          } else {
+            totalUploaded++;
+          }
+        }
+      }
+
+      setBatchUploadStatus(`Successfully uploaded ${totalUploaded} memory photo(s)!`);
+      setTimeout(() => {
+        setBatchFiles([]);
+        setIsUploadingBatch(false);
+        setBatchUploadStatus('');
+        const closeBtn = uploadMemoriesModal.current?.querySelector('button[data-mdb-dismiss="modal"]') as HTMLButtonElement;
+        if (closeBtn) closeBtn.click();
+      }, 1500);
+    } catch (err: any) {
+      console.error('Error processing batch upload:', err);
+      alert(`Upload error: ${err.message || err}`);
+      setIsUploadingBatch(false);
+    }
+  };
+
+  const processPendingSharedPhotos = async () => {
+    try {
+      const pendingRecords = await getPendingSharedPhotos();
+      if (!pendingRecords || pendingRecords.length === 0) return;
+
+      const userID = await GetUserID();
+      let uploadedCount = 0;
+
+      const groupedByDate: Record<string, File[]> = {};
+      for (const rec of pendingRecords) {
+        const date = await getPhotoDate(rec.file);
+        if (!groupedByDate[date]) groupedByDate[date] = [];
+        groupedByDate[date].push(rec.file);
+      }
+
+      const dates = Object.keys(groupedByDate);
+      for (const date of dates) {
+        const filesForDate = groupedByDate[date];
+        const { data: existingFiles } = await supabase.storage
+          .from('Memories')
+          .list(`${userID}/${date}`, { limit: 10000 });
+
+        const existingCount = existingFiles ? existingFiles.length : 0;
+
+        for (let j = 0; j < filesForDate.length; j++) {
+          const file = filesForDate[j];
+          const customName = generateMemoriesFileName(userID, date, existingCount, j + 1, file.name);
+
+          const { error: uploadErr } = await supabase.storage
+            .from('Memories')
+            .upload(`${userID}/${date}/${customName}`, file, { upsert: true });
+
+          if (!uploadErr) uploadedCount++;
+        }
+      }
+
+      await clearSharedPhotos();
+
+      if (window.location.search.includes('shared_photos=1')) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('shared_photos');
+        window.history.replaceState({}, '', url.toString());
+      }
+
+      if (uploadedCount > 0) {
+        alert(`Added ${uploadedCount} shared photo(s) to Memories!`);
+      }
+    } catch (err) {
+      console.error('Error processing shared photos:', err);
+    }
+  };
+
   // Start with no loading screen if a cache entry already exists in sessionStorage
   const [loading, setLoading] = useState<boolean>(() => {
     for (let i = 0; i < sessionStorage.length; i++) {
@@ -198,38 +334,48 @@ const Home = () => {
         while (Date.now() - timeStamp < 1500) continue;
         setLoading(false);
       }
+
+      processPendingSharedPhotos();
     })();
   }, []);
 
   useEffect(() => {
     const btns = document.querySelectorAll('.fc-custom-btn-button')!;
 
-    const customTrackersBtn = btns[0]!;
+    const uploadMemoriesBtn = btns[0]!;
+    uploadMemoriesBtn.innerHTML = '<i class="fas fa-cloud-arrow-up me-2"></i>Upload Memories';
+    uploadMemoriesBtn.addEventListener('click', () => {
+      new Modal(uploadMemoriesModal.current).show();
+    });
+
+    const customTrackersBtn = btns[1]!;
     customTrackersBtn.innerHTML = '<i class="far fa-square-check me-2"></i>Custom Trackers';
     customTrackersBtn.addEventListener('click', () => {
       new Modal(customTrackersModal.current).show();
     });
 
-    const editModeBtn = btns[1]!;
+    const editModeBtn = btns[2]!;
     editModeBtn.textContent = 'Edit Mode';
     editModeBtn.addEventListener('click', () => setEditMode(prevEditMode => !prevEditMode));
 
-    const searchBtn = btns[2]!;
+    const searchBtn = btns[3]!;
     searchBtn.innerHTML = '<i class="fas fa-magnifying-glass me-2"></i>Search';
     searchBtn.addEventListener('click', () => {
       navigate('/search');
     });
 
-    const accountBtn = btns[3]!;
-    accountBtn.innerHTML = '<i class="far fa-user me-2"></i>Account';;
+    const accountBtn = btns[4]!;
+    accountBtn.innerHTML = '<i class="far fa-user me-2"></i>Account';
     accountBtn.addEventListener('click', () => {
       navigate('/account');
     });
   }, []);
 
   useEffect(() => {
-    const editModeBtn = document.querySelectorAll('.fc-custom-btn-button')![1] as HTMLButtonElement;
-    editModeBtn.innerHTML = (editMode ? '<i class="fas fa-check me-2"></i>' : '<i class="fas fa-xmark me-2"></i>') + 'Edit Mode';
+    const editModeBtn = document.querySelectorAll('.fc-custom-btn-button')![2] as HTMLButtonElement;
+    if (editModeBtn) {
+      editModeBtn.innerHTML = (editMode ? '<i class="fas fa-check me-2"></i>' : '<i class="fas fa-xmark me-2"></i>') + 'Edit Mode';
+    }
   }, [editMode]);
 
   useEffect(() => {
@@ -853,7 +999,7 @@ const Home = () => {
         headerToolbar={{
           left: 'prevYear,prev,next,nextYear',
           center: 'title',
-          right: 'custom-btn,custom-btn,custom-btn,custom-btn'
+          right: 'custom-btn,custom-btn,custom-btn,custom-btn,custom-btn'
         }}
         weekends={ true }
         initialView="dayGridMonth"
@@ -1240,6 +1386,61 @@ const Home = () => {
             </div>
             <div className="modal-footer">
               <button type="button" className="btn btn-secondary" data-mdb-ripple-init data-mdb-dismiss="modal">Close</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal fade modal-lg" ref={ uploadMemoriesModal } tabIndex={ -1 } aria-labelledby="upload-memories-modal-label" aria-hidden="true">
+        <div className="modal-dialog">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h5 className="modal-title" id="upload-memories-modal-label"><i className="fas fa-cloud-arrow-up me-2"></i>Upload Memories</h5>
+              <button type="button" className="btn-close" data-mdb-ripple-init data-mdb-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div className="modal-body">
+              <p className="text-muted small mb-3">Select or drop photos below. Photos will be automatically assigned to dates based on their EXIF metadata.</p>
+              <div className="upload-memories-dropzone p-4 text-center border rounded mb-3" style={{ borderStyle: 'dashed', cursor: 'pointer' }} onClick={() => document.getElementById('batch-photo-input')?.click()}>
+                <i className="fas fa-images fa-3x mb-2 text-primary"></i>
+                <h5>Click or drag & drop photos here</h5>
+                <span className="text-muted">Supports JPEG, PNG, HEIC, WebP</span>
+                <input type="file" id="batch-photo-input" multiple accept="image/*" className="d-none" onChange={ handleBatchFilesSelected } />
+              </div>
+
+              { batchFiles.length > 0 && (
+                <div className="batch-preview-container">
+                  <h6 className="mb-2">Selected Photos ({ batchFiles.length }):</h6>
+                  <div className="batch-preview-grid d-flex flex-wrap gap-2 mb-3" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                    { batchFiles.map((item, idx) => (
+                      <div key={ idx } className="position-relative border rounded p-1" style={{ width: '110px' }}>
+                        <img src={ item.previewUrl } alt="preview" className="img-thumbnail w-100" style={{ height: '75px', objectFit: 'cover' }} />
+                        <div className="small text-truncate text-center mt-1" title={ item.date }>
+                          <span className="badge bg-primary">{ item.date }</span>
+                        </div>
+                        <button type="button" className="btn-close position-absolute top-0 end-0 bg-white rounded-circle p-1" aria-label="Remove" onClick={() => {
+                          setBatchFiles(batchFiles.filter((_, i) => i !== idx));
+                        }}></button>
+                      </div>
+                    )) }
+                  </div>
+                </div>
+              ) }
+
+              { isUploadingBatch && (
+                <div className="alert alert-info mt-2 text-center" role="alert">
+                  <div className="spinner-border spinner-border-sm me-2" role="status"></div>
+                  { batchUploadStatus }
+                </div>
+              ) }
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-secondary" data-mdb-ripple-init data-mdb-dismiss="modal" disabled={ isUploadingBatch }>Close</button>
+              { batchFiles.length > 0 && (
+                <button type="button" className="btn btn-danger" onClick={() => setBatchFiles([])} disabled={ isUploadingBatch }>Clear All</button>
+              ) }
+              <button type="button" className="btn btn-primary" onClick={ processBatchUpload } disabled={ batchFiles.length === 0 || isUploadingBatch }>
+                { isUploadingBatch ? 'Uploading...' : `Upload ${batchFiles.length} Photo${batchFiles.length === 1 ? '' : 's'}` }
+              </button>
             </div>
           </div>
         </div>
