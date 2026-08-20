@@ -32,6 +32,10 @@ export async function getPhotoDate(file: File): Promise<string> {
 }
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const FULL_MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
 
 /**
  * Converts a YYYY-MM-DD date string to MMM-DD-YYYY format (e.g., '2026-08-23' -> 'Aug-23-2026')
@@ -44,6 +48,25 @@ export function formatDateForFileName(dateStr: string): string {
   const day = parts[2];
   const monthName = MONTH_NAMES[monthIdx] || parts[1];
   return `${monthName}-${day}-${year}`;
+}
+
+/**
+ * Formats YYYY-MM-DD as "August 28th, 2024"
+ */
+export function formatDateOrdinal(dateStr: string): string {
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const year = parts[0];
+  const monthIdx = parseInt(parts[1], 10) - 1;
+  const dayNum = parseInt(parts[2], 10);
+  const monthName = FULL_MONTH_NAMES[monthIdx] || parts[1];
+
+  let suffix = 'th';
+  if (dayNum % 10 === 1 && dayNum !== 11) suffix = 'st';
+  else if (dayNum % 10 === 2 && dayNum !== 12) suffix = 'nd';
+  else if (dayNum % 10 === 3 && dayNum !== 13) suffix = 'rd';
+
+  return `${monthName} ${dayNum}${suffix}, ${year}`;
 }
 
 /**

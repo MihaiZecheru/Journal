@@ -12,6 +12,7 @@ import Search from './components/Search';
 import Summarize from './components/Summarize';
 import Account from './components/Account';
 import SharedView from './components/SharedView';
+import Memories from './components/Memories';
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
           <Route path="/register" element={ <Register /> } />
           { /* Authenticated routes */}
           <Route path="/home" element={ <Authenticator component={<Home />} /> } />
+          <Route path="/memories" element={ <Authenticator component={<Memories />} /> } />
           <Route path="/search" element={ <Authenticator component={<Search />} /> } />
           <Route path="/summarize/:month/:year" element={ <Authenticator component={<Summarize />} /> } />
           <Route path="/account" element={ <Authenticator component={<Account />} /> } />

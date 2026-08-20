@@ -1,8 +1,8 @@
-export default {
+module.exports = {
   apps: [
     {
-      name: 'journal-server',
-      script: './server.js',
+      name: 'Journal',
+      script: '/home/Journal/server.js',
       instances: 1,
       autorestart: true,
       watch: false,

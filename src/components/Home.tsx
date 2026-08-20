@@ -342,10 +342,10 @@ const Home = () => {
   useEffect(() => {
     const btns = document.querySelectorAll('.fc-custom-btn-button')!;
 
-    const uploadMemoriesBtn = btns[0]!;
-    uploadMemoriesBtn.innerHTML = '<i class="fas fa-cloud-arrow-up me-2"></i>Upload Memories';
-    uploadMemoriesBtn.addEventListener('click', () => {
-      new Modal(uploadMemoriesModal.current).show();
+    const memoriesBtn = btns[0]!;
+    memoriesBtn.innerHTML = '<i class="fas fa-images me-2"></i>Memories';
+    memoriesBtn.addEventListener('click', () => {
+      navigate('/memories');
     });
 
     const customTrackersBtn = btns[1]!;
