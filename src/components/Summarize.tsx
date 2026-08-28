@@ -9,26 +9,29 @@ function capitalizeFirstLetter(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-async function GenerateSummary(entries: string[]): Promise<string> {
-  return fetch('https://journal.mzecheru.com/api/generate-summary', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ entries })
-  }).then((res) => {
-    if (res.status === 200) {
-      return res.json();
-    } else {
-      alert('Summary failed with error code ' + res.status)
+async function GenerateSummary(entries: string[]): Promise<string | null> {
+  try {
+    const res = await fetch('https://journal.mzecheru.com/api/generate-summary', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ entries })
+    });
+
+    const data = await res.json().catch(() => null);
+
+    if (res.status !== 200 || !data || !data.summary) {
+      const errMsg = data?.error || (res.status !== 200 ? `error code ${res.status}` : 'No summary generated');
+      alert('Summary failed: ' + errMsg);
       return null;
     }
-  }).then((res) => {
-    return res.summary;
-  }).catch((err) => {
-    alert('Summary failed due to unknown error. ' + err.message);
+
+    return data.summary;
+  } catch (err: any) {
+    alert('Summary failed due to unknown error. ' + (err?.message || err));
     return null;
-  });
+  }
 }
 
 /**
@@ -263,17 +266,33 @@ const Summarize = () => {
         }
   
         const journal_entries: Array<string> = data.map((e: any) => e.journal_entry);
-        const generated_summary: string = await GenerateSummary(journal_entries);
+        const generated_summary: string | null = await GenerateSummary(journal_entries);
         
+        if (!generated_summary) {
+          setSummaryError("Failed to generate summary. Please try again later.");
+          setLoading(false);
+          return;
+        }
+
         const amountOfNoRatingEntries = data.reduce((acc, entry) => acc + (entry.rating == 11 ? 1 : 0), 0);
         const sumOfRatings = data.reduce((acc, entry) => acc + (entry.rating == 11 ? 0 : entry.rating), 0); // Ignores entries with no rating (that's when rating == 11)
         const average_rating = parseFloat((sumOfRatings / ((data.length - amountOfNoRatingEntries) || 1)).toFixed(1));
         setAverageRating(average_rating);
         SaveSummary(months.indexOf(month), year, generated_summary, average_rating);
         setRawSummary(generated_summary);
-        setSummary(generated_summary.substring(0, generated_summary.indexOf("**Highlights:**")).trim());
-        const _highlights = generated_summary.match(/1\.(.*?)\n2\.(.*?)\n3\.(.*?)\./);
-        setHighlights([_highlights![1].trim(), _highlights![2].trim(), _highlights![3].trim()]);
+
+        if (!generated_summary.includes("**Highlights:**")) {
+          setSummary(generated_summary);
+          setHighlights(["No highlights separator found in summary.", "", ""]);
+        } else {
+          setSummary(generated_summary.substring(0, generated_summary.indexOf("**Highlights:**")).trim());
+          const _highlights = generated_summary.match(/1\.(.*?)\n2\.(.*?)\n3\.(.*?)\./);
+          if (_highlights && _highlights[1] && _highlights[2] && _highlights[3]) {
+            setHighlights([_highlights[1].trim(), _highlights[2].trim(), _highlights[3].trim()]);
+          } else {
+            setHighlights(["Unable to parse highlights format.", "", ""]);
+          }
+        }
       } else {
         try {
           if (existingSummary.average_rating == null) {

@@ -38,7 +38,7 @@ async function GenerateSummary(entries) {
 There's ${entries.length} entries. START: ${entries.join("\nNext:\n")}\nThen, type "**Highlights:**" and separately from the summary give 3 events that are highlights from the month, still in second person, numbered.`;
 
   const response = await gemini.models.generateContent({
-    model: "gemini-2.5-flash",
+    model: "gemini-3.1-pro",
     contents: [{
 			role: "user",
 			parts: [{
@@ -66,7 +66,7 @@ ${formattedEntries}
 END ENTRIES.`;
 
   const response = await gemini.models.generateContent({
-    model: "gemini-2.5-flash",
+    model: "gemini-3.5-flash-lite",
     contents: [{
       role: "user",
       parts: [{
@@ -86,7 +86,7 @@ END ENTRIES.`;
  */
 async function GenerateSearchKeywords(question) {
   const response = await gemini.models.generateContent({
-    model: "gemini-2.5-flash",
+    model: "gemini-3.5-flash-lite",
     contents: [{
       role: "user",
       parts: [{
@@ -104,10 +104,10 @@ Question: ${question}`
 }
 
 app.post('/api/generate-summary', (req, res) => {
-  const { entries } = req.body;
+  const { entries } = req.body || {};
 
-  if (!entries.length) {
-    return res.status(400).json({ error: "Missing the 'entries' body param", summary: null });
+  if (!entries || !Array.isArray(entries) || !entries.length) {
+    return res.status(400).json({ error: "Missing or invalid 'entries' body param", summary: null });
   }
 
   GenerateSummary(entries)
