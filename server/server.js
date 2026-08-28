@@ -11,7 +11,7 @@ const __filename = fileURLToPath(import.meta.url); // Needed for ejs shit
 const __dirname = path.dirname(__filename); // Needed for ejs shit
 
 const app = express();
-const port = 3002;
+const port = process.env.PORT || 4002;
 const build_name = 'build';
 
 const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
