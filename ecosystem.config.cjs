@@ -2,7 +2,8 @@ module.exports = {
   apps: [
     {
       name: 'Journal',
-      script: '/home/Journal/server/server.js',
+      script: "npm",
+      args: "start",
       autorestart: true,
       watch: false,
       max_memory_restart: '1G',

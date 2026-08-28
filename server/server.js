@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename); // Needed for ejs shit
 
 const app = express();
 const port = process.env.PORT || 4002;
-const build_name = 'build';
+const build_name = '../build';
 
 const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
