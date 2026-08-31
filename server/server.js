@@ -38,7 +38,7 @@ async function GenerateSummary(entries) {
 There's ${entries.length} entries. START: ${entries.join("\nNext:\n")}\nThen, type "**Highlights:**" and separately from the summary give 3 events that are highlights from the month, still in second person, numbered.`;
 
   const response = await gemini.models.generateContent({
-    model: "gemini-2.5-pro",
+    model: "gemini-3.1-pro-preview",
     contents: [{
 			role: "user",
 			parts: [{
