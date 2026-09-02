@@ -57,7 +57,7 @@ async function SearchWithAI(query, entries) {
 
   const today = new Date().toISOString().split('T')[0];
 
-  const prompt = `Today's date is ${today}. Answer the following query using the journal entries provided. If you can't find the answer, let the user know.
+  const prompt = `Today's date is ${today}. Answer the following query using the journal entries provided. If you can't find the answer, let the user know. Cite the dates of the entries you used to come up with your answer.
 
 Query: ${query}
 
