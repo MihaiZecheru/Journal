@@ -314,6 +314,10 @@ export class PiStorageClient {
     const chunkSize = PISTORAGE_CONSTRAINTS.MAX_BULK_UPLOAD_AMOUNT;
     const totalValid = validFiles.length;
 
+    if (onProgress) {
+      onProgress(0, totalValid);
+    }
+
     for (let i = 0; i < validFiles.length; i += chunkSize) {
       const chunk = validFiles.slice(i, i + chunkSize);
       const formData = new FormData();

@@ -253,7 +253,7 @@ const Home = () => {
   const uploadMemoriesModal = useRef<HTMLDivElement>(null);
   const [batchFiles, setBatchFiles] = useState<{ file: File; date: string; previewUrl: string; isOriginalDate: boolean }[]>([]);
   const [isUploadingBatch, setIsUploadingBatch] = useState<boolean>(false);
-  const [batchUploadStatus, setBatchUploadStatus] = useState<string>('');
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
   const [bulkDate, setBulkDate] = useState<string>(() => toLosAngelesDateString(new Date()));
 
   const handleBatchFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -285,7 +285,8 @@ const Home = () => {
   const processBatchUpload = async () => {
     if (batchFiles.length === 0) return;
     setIsUploadingBatch(true);
-    setBatchUploadStatus('Preparing upload...');
+    const totalFiles = batchFiles.length;
+    setUploadProgress({ current: 0, total: totalFiles });
 
     try {
       const userID = await GetUserID();
@@ -298,22 +299,32 @@ const Home = () => {
 
       const dates = Object.keys(groupedByDate);
       let totalUploaded = 0;
+      let cumulativeUploaded = 0;
 
       for (let i = 0; i < dates.length; i++) {
         const date = dates[i];
         const filesForDate = groupedByDate[date];
         const targetFolder = `${piStorage.defaultFolder}/${userID}/${date}`;
 
-        setBatchUploadStatus(`Uploading ${filesForDate.length} photo(s) (${date})...`);
-
         try {
-          const uploadRes = await piStorage.uploadFiles(targetFolder, filesForDate);
+          const uploadRes = await piStorage.uploadFiles(
+            targetFolder,
+            filesForDate,
+            (chunkUploaded, chunkTotal) => {
+              const currentNum = Math.min(totalFiles, cumulativeUploaded + chunkUploaded);
+              setUploadProgress({ current: currentNum, total: totalFiles });
+            }
+          );
           totalUploaded += uploadRes.uploadedCount || 0;
+          cumulativeUploaded += filesForDate.length;
+          setUploadProgress({ current: Math.min(totalFiles, cumulativeUploaded), total: totalFiles });
+
           if (uploadRes.failed && uploadRes.failed.length > 0) {
             console.warn(`Some files failed to upload for ${date}:`, uploadRes.failed);
           }
         } catch (uploadErr) {
           console.error(`Error uploading files for ${date}:`, uploadErr);
+          cumulativeUploaded += filesForDate.length;
         }
       }
 
@@ -329,13 +340,14 @@ const Home = () => {
       if (closeBtn) closeBtn.click();
       setBatchFiles([]);
       setIsUploadingBatch(false);
-      setBatchUploadStatus('');
+      setUploadProgress(null);
       setUploadSuccessMessage(`Successfully uploaded ${totalUploaded} memory photo${totalUploaded === 1 ? '' : 's'}!`);
       setUploadSuccessModalOpen(true);
     } catch (err: any) {
       console.error('Error processing batch upload:', err);
       alert(`Upload error: ${err.message || err}`);
       setIsUploadingBatch(false);
+      setUploadProgress(null);
     }
   };
 
@@ -1619,10 +1631,30 @@ const Home = () => {
                 </div>
               ) }
 
-              { isUploadingBatch && (
-                <div className="alert alert-info mt-2 text-center" role="alert">
-                  <div className="spinner-border spinner-border-sm me-2" role="status"></div>
-                  { batchUploadStatus }
+              { isUploadingBatch && uploadProgress && (
+                <div className="alert alert-info mt-2" role="alert">
+                  <div className="d-flex align-items-center justify-content-between mb-2">
+                    <span className="fw-semibold small">
+                      <div className="spinner-border spinner-border-sm me-2" role="status"></div>
+                      Uploading photos to PiStorage...
+                    </span>
+                    <span className="fw-bold small ms-2">
+                      {uploadProgress.current}/{uploadProgress.total}
+                    </span>
+                  </div>
+                  <div className="progress" style={{ height: '16px', backgroundColor: 'rgba(0,0,0,0.1)' }}>
+                    <div
+                      className="progress-bar progress-bar-striped progress-bar-animated bg-primary"
+                      role="progressbar"
+                      style={{
+                        width: `${uploadProgress.total > 0 ? Math.min(100, Math.round((uploadProgress.current / uploadProgress.total) * 100)) : 0}%`,
+                        transition: 'width 0.3s ease',
+                      }}
+                      aria-valuenow={uploadProgress.current}
+                      aria-valuemin={0}
+                      aria-valuemax={uploadProgress.total}
+                    ></div>
+                  </div>
                 </div>
               ) }
             </div>

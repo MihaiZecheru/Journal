@@ -159,7 +159,7 @@ const Memories: React.FC = () => {
   const [bulkDate, setBulkDate] = useState<string>(() => toLosAngelesDateString(new Date()));
   const [failedUploads, setFailedUploads] = useState<FailedUploadItem[]>([]);
   const [isUploading, setIsUploading] = useState<boolean>(false);
-  const [uploadStatus, setUploadStatus] = useState<string>('');
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
 
   // Content Viewing Modal (Lightbox) State
@@ -932,7 +932,8 @@ const Memories: React.FC = () => {
   const processBatchUpload = async () => {
     if (batchFiles.length === 0) return;
     setIsUploading(true);
-    setUploadStatus('Preparing memories for upload...');
+    const totalFilesToUpload = batchFiles.length;
+    setUploadProgress({ current: 0, total: totalFilesToUpload });
 
     try {
       const userID = await GetUserID();
@@ -957,6 +958,9 @@ const Memories: React.FC = () => {
       let uploadedSuccessCount = 0;
 
       if (filesToUpload.length > 0) {
+        const totalValid = filesToUpload.length;
+        setUploadProgress({ current: 0, total: totalValid });
+
         const grouped: Record<string, File[]> = {};
         filesToUpload.forEach((item) => {
           const folderDate = item.date === 'Unknown' || item.date === 'Unknown-Date' ? 'Unknown-Date' : item.date;
@@ -965,17 +969,24 @@ const Memories: React.FC = () => {
         });
 
         const datesArr = Object.keys(grouped);
+        let cumulativeUploaded = 0;
+
         for (const date of datesArr) {
           const filesForDate = grouped[date];
           const targetFolder = `${piStorage.defaultFolder}/${userID}/${date}`;
 
-          setUploadStatus(
-            `Uploading ${filesForDate.length} photo(s) to PiStorage (${date})...`
-          );
-
           try {
-            const uploadRes = await piStorage.uploadFiles(targetFolder, filesForDate);
+            const uploadRes = await piStorage.uploadFiles(
+              targetFolder,
+              filesForDate,
+              (chunkUploaded, chunkTotal) => {
+                const currentCount = Math.min(totalValid, cumulativeUploaded + chunkUploaded);
+                setUploadProgress({ current: currentCount, total: totalValid });
+              }
+            );
             uploadedSuccessCount += uploadRes.uploadedCount || 0;
+            cumulativeUploaded += filesForDate.length;
+            setUploadProgress({ current: Math.min(totalValid, cumulativeUploaded), total: totalValid });
 
             if (uploadRes.failed && uploadRes.failed.length > 0) {
               uploadRes.failed.forEach((fail) => {
@@ -1001,6 +1012,7 @@ const Memories: React.FC = () => {
                 reason: uploadErr.message || 'Upload failed',
               });
             });
+            cumulativeUploaded += filesForDate.length;
           }
         }
       }
@@ -1009,7 +1021,7 @@ const Memories: React.FC = () => {
       setFailedUploads((prev) => [...prev, ...newFailedUploads]);
       setBatchFiles([]);
       setIsUploading(false);
-      setUploadStatus('');
+      setUploadProgress(null);
 
       await refreshMemoryIndex();
       fetchPhotos();
@@ -1672,10 +1684,30 @@ const Memories: React.FC = () => {
               )}
 
               {/* Upload Status / Progress */}
-              {isUploading && (
-                <div className="alert alert-info text-center" role="alert">
-                  <div className="spinner-border spinner-border-sm me-2" role="status"></div>
-                  {uploadStatus}
+              {isUploading && uploadProgress && (
+                <div className="alert alert-info" role="alert">
+                  <div className="d-flex align-items-center justify-content-between mb-2">
+                    <span className="fw-semibold small">
+                      <div className="spinner-border spinner-border-sm me-2" role="status"></div>
+                      Uploading photos to PiStorage...
+                    </span>
+                    <span className="fw-bold small ms-2">
+                      {uploadProgress.current}/{uploadProgress.total}
+                    </span>
+                  </div>
+                  <div className="progress" style={{ height: '16px', backgroundColor: 'rgba(0,0,0,0.1)' }}>
+                    <div
+                      className="progress-bar progress-bar-striped progress-bar-animated bg-primary"
+                      role="progressbar"
+                      style={{
+                        width: `${uploadProgress.total > 0 ? Math.min(100, Math.round((uploadProgress.current / uploadProgress.total) * 100)) : 0}%`,
+                        transition: 'width 0.3s ease',
+                      }}
+                      aria-valuenow={uploadProgress.current}
+                      aria-valuemin={0}
+                      aria-valuemax={uploadProgress.total}
+                    ></div>
+                  </div>
                 </div>
               )}
 
