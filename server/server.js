@@ -142,13 +142,13 @@ app.post('/api/generate-search-keywords', (req, res) => {
 
 app.post('/api/create-short-url', async (req, res) => {
   try {
-    const { url, alias, creator, permanent } = req.body || {};
+    const { url, alias, permanent } = req.body || {};
     if (!url) {
       return res.status(400).json({ error: "Missing 'url' parameter", short_url: null });
     }
 
-    const bebUrl = (process.env.REACT_APP_BEB_URL || process.env.BEB_URL || 'https://beb.mzecheru.com').replace(/\/+$/, '');
-    const creatorId = creator || process.env.REACT_APP_BEB_USER_ID || process.env.BEB_USER_ID || '2f02d928-5f92-46cf-a2e8-49a3aa8a7bc1';
+    const bebUrl = (process.env.BEB_URL || 'https://beb.mzecheru.com').replace(/\/+$/, '');
+    const creatorId = process.env.BEB_USER_ID || '2f02d928-5f92-46cf-a2e8-49a3aa8a7bc1';
 
     const bebRes = await fetch(`${bebUrl}/api/create`, {
       method: 'POST',
@@ -164,7 +164,11 @@ app.post('/api/create-short-url', async (req, res) => {
     });
 
     const data = await bebRes.json();
-    return res.status(bebRes.status).json(data);
+    return res.status(bebRes.status).json({
+      error: data.error || null,
+      short_url: data.short_url,
+      full_short_url: data.short_url ? `${bebUrl}/${data.short_url}` : null,
+    });
   } catch (err) {
     console.error('Error proxying short URL creation to Beb:', err);
     return res.status(500).json({ error: err.message, short_url: null });

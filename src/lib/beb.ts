@@ -24,42 +24,27 @@ export interface BebShortUrlResponse {
 }
 
 /**
- * Creates a shortened URL on beb.mzecheru.com pointing to the given image URL.
- * Uses a random 9-digit hexadecimal alias by default.
+ * Creates a shortened URL via Journal's server-side proxy (/api/create-short-url).
+ * The server securely injects the BEB_USER_ID and contacts Beb server-to-server,
+ * completely preventing CORS errors and keeping sensitive credentials out of the client bundle.
  */
 export async function createBebShortUrl(
   targetUrl: string,
   customAlias?: string
 ): Promise<BebShortUrlResponse> {
-  const bebBaseUrl = (
-    process.env.REACT_APP_BEB_URL ||
-    process.env.BEB_URL ||
-    'https://beb.mzecheru.com'
-  ).replace(/\/+$/, '');
-
-  const creatorId =
-    process.env.REACT_APP_BEB_USER_ID ||
-    process.env.BEB_USER_ID ||
-    '2f02d928-5f92-46cf-a2e8-49a3aa8a7bc1';
+  const proxyEndpoints = [
+    '/api/create-short-url',
+    'https://journal.mzecheru.com/api/create-short-url',
+  ];
 
   let lastError: any = null;
   const maxAttempts = 3;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const alias = customAlias || generateRandomHexId(9);
-
-    // Candidates to avoid browser CORS:
-    // 1. Same-origin Journal proxy (/api/create-short-url)
-    // 2. Direct Beb API (${bebBaseUrl}/api/create)
-    const requestCandidates: string[] = [];
-    if (typeof window !== 'undefined' && window.location) {
-      requestCandidates.push('/api/create-short-url');
-    }
-    requestCandidates.push(`${bebBaseUrl}/api/create`);
-
     let collisionOccurred = false;
 
-    for (const endpoint of requestCandidates) {
+    for (const endpoint of proxyEndpoints) {
       try {
         const res = await fetch(endpoint, {
           method: 'POST',
@@ -67,7 +52,6 @@ export async function createBebShortUrl(
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            creator: creatorId,
             url: targetUrl,
             alias,
             permanent: true,
@@ -75,12 +59,12 @@ export async function createBebShortUrl(
         });
 
         if (!res.ok) {
-          // If proxy returned 404 or 502, try direct Beb endpoint
-          if ((res.status === 404 || res.status === 502) && endpoint !== `${bebBaseUrl}/api/create`) {
+          // If relative path 404s (e.g. running standalone webpack dev without proxy), try full production domain
+          if (res.status === 404 && endpoint === '/api/create-short-url') {
             continue;
           }
           const errData = await res.json().catch(() => ({ error: res.statusText }));
-          throw new Error(`[Beb Short URL Failed] ${res.status}: ${errData.error || res.statusText}`);
+          throw new Error(`[Short URL Failed] ${res.status}: ${errData.error || res.statusText}`);
         }
 
         const data = await res.json();
@@ -90,17 +74,18 @@ export async function createBebShortUrl(
             collisionOccurred = true;
             break;
           }
-          throw new Error(`[Beb Short URL Failed]: ${data.error}`);
+          throw new Error(`[Short URL Failed]: ${data.error}`);
         }
 
         const shortAlias = data.short_url || alias;
+        const fullShortUrl = data.full_short_url || `https://beb.mzecheru.com/${shortAlias}`;
         return {
-          shortUrl: `${bebBaseUrl}/${shortAlias}`,
+          shortUrl: fullShortUrl,
           alias: shortAlias,
         };
       } catch (err: any) {
         lastError = err;
-        // Continue to fallback endpoint if available
+        // Try fallback proxy endpoint if relative fails
       }
     }
 
@@ -108,5 +93,5 @@ export async function createBebShortUrl(
     if (customAlias) break;
   }
 
-  throw lastError || new Error('Failed to create short URL on Beb');
+  throw lastError || new Error('Failed to create short URL via server proxy');
 }
