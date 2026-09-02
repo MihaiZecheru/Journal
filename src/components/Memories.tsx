@@ -1349,17 +1349,18 @@ const Memories: React.FC = () => {
                 </div>
               )}
 
-              {viewMode === 'year' && (
+              {(viewMode === 'year' || viewMode === 'unknown') && (
                 <div>
                   {availableYears.length === 0 && <p className="text-light opacity-75">No years with memories found.</p>}
                   {availableYears.map((y) => {
-                    const isActive = y.year === currentYear;
+                    const isActive = viewMode === 'year' && y.year === currentYear;
                     return (
                       <div
                         key={y.year}
                         className={`date-picker-item ${isActive ? 'active' : ''}`}
                         onClick={() => {
                           setCurrentYear(y.year);
+                          setViewMode('year');
                           const closeBtn = datePickerModalRef.current?.querySelector(
                             'button[data-mdb-dismiss="modal"]'
                           ) as HTMLButtonElement;
