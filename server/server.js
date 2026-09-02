@@ -87,7 +87,7 @@ END ENTRIES.`;
  */
 async function GenerateSearchKeywords(question) {
   const response = await gemini.models.generateContent({
-    model: "gemini-2.5-flash-lite",
+    model: "gemini-3.5-flash",
     contents: [{
       role: "user",
       parts: [{
