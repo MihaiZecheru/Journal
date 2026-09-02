@@ -4,6 +4,7 @@ import {
   generateMemoriesFileName,
   parseDateFromFilename,
   getPhotoDateDetails,
+  UNKNOWN_DATE_FOLDER,
 } from './exifUtils';
 import ExifReader from 'exifreader';
 
@@ -16,6 +17,8 @@ describe('exifUtils file naming & date formatting tests', () => {
     expect(formatDateForFileName('2026-08-23')).toBe('Aug-23-2026');
     expect(formatDateForFileName('2024-01-05')).toBe('Jan-05-2024');
     expect(formatDateForFileName('2025-12-31')).toBe('Dec-31-2025');
+    expect(formatDateForFileName('Unknown-Date')).toBe('Unknown-Date');
+    expect(formatDateForFileName('Unknown')).toBe('Unknown-Date');
   });
 
   test('formatDateOrdinal formats YYYY-MM-DD as Month DDth, YYYY', () => {
@@ -27,6 +30,8 @@ describe('exifUtils file naming & date formatting tests', () => {
     expect(formatDateOrdinal('2024-08-21')).toBe('August 21st, 2024');
     expect(formatDateOrdinal('2024-08-22')).toBe('August 22nd, 2024');
     expect(formatDateOrdinal('2024-08-23')).toBe('August 23rd, 2024');
+    expect(formatDateOrdinal('Unknown-Date')).toBe('Unknown Date');
+    expect(formatDateOrdinal('Unknown')).toBe('Unknown Date');
   });
 
   test('generateMemoriesFileName produces correct naming format', () => {

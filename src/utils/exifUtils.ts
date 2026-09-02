@@ -206,10 +206,16 @@ export async function getPhotoDate(file: File): Promise<string> {
   return result.date;
 }
 
+export const UNKNOWN_DATE_FOLDER = 'Unknown-Date';
+
 /**
- * Converts a YYYY-MM-DD date string to MMM-DD-YYYY format (e.g., '2026-08-23' -> 'Aug-23-2026')
+ * Converts a YYYY-MM-DD date string to MMM-DD-YYYY format (e.g., '2026-08-23' -> 'Aug-23-2026').
+ * For 'Unknown-Date' or 'Unknown', returns 'Unknown-Date'.
  */
 export function formatDateForFileName(dateStr: string): string {
+  if (!dateStr || dateStr === 'Unknown-Date' || dateStr === 'Unknown') {
+    return UNKNOWN_DATE_FOLDER;
+  }
   const parts = dateStr.split('-');
   if (parts.length !== 3) return dateStr;
   const year = parts[0];
@@ -220,9 +226,13 @@ export function formatDateForFileName(dateStr: string): string {
 }
 
 /**
- * Formats YYYY-MM-DD as "August 28th, 2024"
+ * Formats YYYY-MM-DD as "August 28th, 2024".
+ * For 'Unknown-Date' or 'Unknown', returns "Unknown Date".
  */
 export function formatDateOrdinal(dateStr: string): string {
+  if (!dateStr || dateStr === 'Unknown-Date' || dateStr === 'Unknown') {
+    return 'Unknown Date';
+  }
   const parts = dateStr.split('-');
   if (parts.length !== 3) return dateStr;
   const year = parts[0];

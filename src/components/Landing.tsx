@@ -1,8 +1,28 @@
+import { useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import supabase from '../database/config/supabase';
 import '../styles/landing.css';
 
 const Landing = () => {
   const navigate = useNavigate();
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        navigate('/home', { replace: true });
+      }
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session) {
+        navigate('/home', { replace: true });
+      }
+    });
+
+    return () => {
+      authListener?.subscription.unsubscribe();
+    };
+  }, [navigate]);
 
   const onBtnClick = () => {
     setTimeout(() => navigate('/login'), 250);
