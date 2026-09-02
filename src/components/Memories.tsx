@@ -5,7 +5,7 @@ import supabase from '../database/config/supabase';
 import { GetUserID } from '../database/GetUser';
 import fileDownload from 'js-file-download';
 import { getPhotoDate, formatDateOrdinal } from '../utils/exifUtils';
-import { piStorage } from '../lib/pistorage';
+import { piStorage, PISTORAGE_CONSTRAINTS } from '../lib/pistorage';
 import { createBebShortUrl } from '../lib/beb';
 import Entry from '../database/Entry';
 import '../styles/memories.css';
@@ -595,9 +595,7 @@ const Memories: React.FC = () => {
       const newFailedUploads: FailedUploadItem[] = [];
 
       batchFiles.forEach((item) => {
-        if (validDatesSet.has(item.date)) {
-          filesToUpload.push({ file: item.file, date: item.date });
-        } else {
+        if (!validDatesSet.has(item.date)) {
           newFailedUploads.push({
             id: Math.random().toString(36).substring(2, 9),
             file: item.file,
@@ -605,6 +603,17 @@ const Memories: React.FC = () => {
             formattedDate: formatDateOrdinal(item.date),
             reason: 'No journal entry exists for this day',
           });
+        } else if (item.file.size > PISTORAGE_CONSTRAINTS.MAX_IMAGE_SIZE_BYTES) {
+          const sizeMB = (item.file.size / (1024 * 1024)).toFixed(1);
+          newFailedUploads.push({
+            id: Math.random().toString(36).substring(2, 9),
+            file: item.file,
+            date: item.date,
+            formattedDate: formatDateOrdinal(item.date),
+            reason: `Image is ${sizeMB} MB (exceeds ${PISTORAGE_CONSTRAINTS.MAX_IMAGE_SIZE_MB} MB limit). Please compress first.`,
+          });
+        } else {
+          filesToUpload.push({ file: item.file, date: item.date });
         }
       });
 
@@ -696,6 +705,12 @@ const Memories: React.FC = () => {
         alert(
           `Still no journal entry found for ${failedItem.formattedDate}. Please write an entry for this day first before retrying!`
         );
+        return;
+      }
+
+      if (failedItem.file.size > PISTORAGE_CONSTRAINTS.MAX_IMAGE_SIZE_BYTES) {
+        const sizeMB = (failedItem.file.size / (1024 * 1024)).toFixed(1);
+        alert(`This image (${sizeMB} MB) exceeds the ${PISTORAGE_CONSTRAINTS.MAX_IMAGE_SIZE_MB} MB limit. Please compress it before retrying.`);
         return;
       }
 
@@ -1073,7 +1088,7 @@ const Memories: React.FC = () => {
               >
                 <i className="fas fa-images fa-3x"></i>
                 <h5>Click or drag & drop photos here</h5>
-                <span className="dropzone-subtitle">Supports JPEG, PNG, HEIC, WebP</span>
+                <span className="dropzone-subtitle">Supports JPEG, PNG, HEIC, WebP (max 2 MB per image, uploaded in batches of 5)</span>
                 <input
                   type="file"
                   id="memories-file-input"

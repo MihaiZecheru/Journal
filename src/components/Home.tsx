@@ -1368,7 +1368,7 @@ const Home = () => {
               <div className="upload-memories-dropzone p-4 text-center border rounded mb-3" style={{ borderStyle: 'dashed', cursor: 'pointer' }} onClick={() => document.getElementById('batch-photo-input')?.click()}>
                 <i className="fas fa-images fa-3x mb-2 text-primary"></i>
                 <h5>Click or drag & drop photos here</h5>
-                <span className="text-muted">Supports JPEG, PNG, HEIC, WebP</span>
+                <span className="text-muted">Supports JPEG, PNG, HEIC, WebP (max 2 MB per image, uploaded in batches of 5)</span>
                 <input type="file" id="batch-photo-input" multiple accept="image/*" className="d-none" onChange={ handleBatchFilesSelected } />
               </div>
 
