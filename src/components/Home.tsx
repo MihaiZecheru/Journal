@@ -254,6 +254,7 @@ const Home = () => {
   const [batchFiles, setBatchFiles] = useState<{ file: File; date: string; previewUrl: string; isOriginalDate: boolean }[]>([]);
   const [isUploadingBatch, setIsUploadingBatch] = useState<boolean>(false);
   const [batchUploadStatus, setBatchUploadStatus] = useState<string>('');
+  const [bulkDate, setBulkDate] = useState<string>(() => toLosAngelesDateString(new Date()));
 
   const handleBatchFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -268,6 +269,11 @@ const Home = () => {
 
     setBatchFiles((prev) => [...prev, ...parsedFiles]);
     e.target.value = '';
+  };
+
+  const handleApplyBulkDate = () => {
+    if (!bulkDate) return;
+    setBatchFiles((prev) => prev.map((item) => ({ ...item, date: bulkDate, isOriginalDate: true })));
   };
 
   const handleSetAllUnknown = () => {
@@ -1488,17 +1494,37 @@ const Home = () => {
 
               { batchFiles.length > 0 && (
                 <div className="batch-preview-container">
-                  <div className="d-flex align-items-center justify-content-between mb-2">
-                    <h6 className="mb-0">Selected Photos ({ batchFiles.length }):</h6>
+                  <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2 p-2 bg-dark rounded border border-secondary">
+                    <div className="d-flex align-items-center gap-2">
+                      <span className="small text-muted">Set date for all:</span>
+                      <input
+                        type="date"
+                        className="form-control form-control-sm py-0 px-1 text-center"
+                        style={{ width: 'auto', fontSize: '0.75rem', height: '26px' }}
+                        value={bulkDate}
+                        onChange={(e) => setBulkDate(e.target.value)}
+                        disabled={isUploadingBatch}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm py-0 px-2"
+                        style={{ fontSize: '0.72rem', height: '26px' }}
+                        onClick={handleApplyBulkDate}
+                        disabled={!bulkDate || isUploadingBatch}
+                        title="Apply this date to all photos"
+                      >
+                        Apply
+                      </button>
+                    </div>
                     <button
                       type="button"
                       className="btn btn-outline-secondary btn-sm py-0 px-2"
-                      style={{ fontSize: '0.72rem' }}
+                      style={{ fontSize: '0.72rem', height: '26px' }}
                       onClick={handleSetAllUnknown}
                       disabled={isUploadingBatch}
                       title="Set all selected photos to Unknown Date"
                     >
-                      <i className="far fa-calendar-times me-1"></i>Set All Unknown
+                      <i className="far fa-calendar-times text-warning me-1"></i>Set All to Unknown
                     </button>
                   </div>
 
@@ -1572,7 +1598,7 @@ const Home = () => {
                                 <button
                                   type="button"
                                   className="btn btn-outline-secondary btn-sm py-0 px-1"
-                                  style={{ fontSize: '0.62rem', height: '24px' }}
+                                  style={{ fontSize: '0.65rem', height: '24px' }}
                                   onClick={() => {
                                     setBatchFiles((prev) =>
                                       prev.map((f, i) => (i === idx ? { ...f, date: 'Unknown-Date', isOriginalDate: true } : f))
@@ -1581,19 +1607,9 @@ const Home = () => {
                                   disabled={isUploadingBatch}
                                   title="Mark as Unknown Date"
                                 >
-                                  ?
+                                  Unknown
                                 </button>
                               </div>
-                              { !item.isOriginalDate && (
-                                <div
-                                  className="text-warning text-center mt-1 d-flex align-items-center justify-content-center gap-1"
-                                  style={{ fontSize: '0.64rem', lineHeight: '1.1' }}
-                                  title="Estimated date: not from camera capture EXIF. Please set manually or click ? for Unknown."
-                                >
-                                  <i className="fas fa-triangle-exclamation"></i>
-                                  <span>Check date</span>
-                                </div>
-                              ) }
                             </div>
                           ) }
                         </div>

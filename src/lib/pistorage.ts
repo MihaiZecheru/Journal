@@ -48,6 +48,44 @@ export interface SignedUrlResponse {
   shortUrlAlias?: string;
 }
 
+export interface MoveSingleResponse {
+  message: string;
+  sourcePath: string;
+  targetPath: string;
+  targetFolder: string;
+  filename: string;
+  viewUrl: string;
+  thumbnailUrl: string;
+}
+
+export interface MovedBatchItem {
+  originalPath: string;
+  newPath: string;
+  filename: string;
+  targetFolder: string;
+  viewUrl: string;
+  thumbnailUrl: string;
+}
+
+export interface FailedBatchItem {
+  path: string;
+  error: string;
+}
+
+export interface MoveBatchResponse {
+  message: string;
+  movedCount: number;
+  failedCount: number;
+  targetFolder: string;
+  moved: MovedBatchItem[];
+  failed: FailedBatchItem[];
+}
+
+export interface ListDirectoriesResponse {
+  directories: string[];
+}
+
+
 export interface MediaFileItem {
   name: string;
   relativePath: string;
@@ -517,6 +555,87 @@ export class PiStorageClient {
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
       throw new Error(`[PiStorage Delete Dir Failed] ${res.status}: ${err.error || err.message || res.statusText}`);
+    }
+
+    return await res.json();
+  }
+
+  /**
+   * Moves a single file to a target directory.
+   */
+  async moveFile(
+    sourcePath: string,
+    targetFolder: string,
+    overwrite: boolean = false
+  ): Promise<MoveSingleResponse> {
+    const cleanPath = sourcePath.startsWith('/') ? sourcePath : `/${sourcePath}`;
+    const cleanFolder = targetFolder.startsWith('/') ? targetFolder : `/${targetFolder}`;
+
+    const res = await fetch(`${this.baseUrl}/api/file/move`, {
+      method: 'POST',
+      headers: {
+        ...this.headers,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        path: cleanPath,
+        targetFolder: cleanFolder,
+        overwrite,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(`[PiStorage Move File Failed] ${res.status}: ${err.error || err.message || res.statusText}`);
+    }
+
+    return await res.json();
+  }
+
+  /**
+   * Moves multiple files in batch to a target directory.
+   */
+  async moveFiles(
+    paths: string[],
+    targetFolder: string,
+    overwrite: boolean = false
+  ): Promise<MoveBatchResponse> {
+    const cleanPaths = paths.map((p) => (p.startsWith('/') ? p : `/${p}`));
+    const cleanFolder = targetFolder.startsWith('/') ? targetFolder : `/${targetFolder}`;
+
+    const res = await fetch(`${this.baseUrl}/api/file/move`, {
+      method: 'POST',
+      headers: {
+        ...this.headers,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        paths: cleanPaths,
+        targetFolder: cleanFolder,
+        overwrite,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(`[PiStorage Move Files Failed] ${res.status}: ${err.error || err.message || res.statusText}`);
+    }
+
+    return await res.json();
+  }
+
+  /**
+   * Helper Endpoint: List Existing Directories in PiStorage.
+   */
+  async listDirectories(): Promise<ListDirectoriesResponse> {
+    const res = await fetch(`${this.baseUrl}/api/dirs`, {
+      method: 'GET',
+      headers: this.headers,
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(`[PiStorage List Dirs Failed] ${res.status}: ${err.error || err.message || res.statusText}`);
     }
 
     return await res.json();

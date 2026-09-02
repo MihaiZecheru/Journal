@@ -9,6 +9,7 @@ import { piStorage, PISTORAGE_CONSTRAINTS } from '../lib/pistorage';
 import { createBebShortUrl } from '../lib/beb';
 import ShortUrlModal from './ShortUrlModal';
 import UploadSuccessModal from './UploadSuccessModal';
+import ChangeDateModal from './ChangeDateModal';
 import Entry from '../database/Entry';
 import '../styles/memories.css';
 
@@ -173,6 +174,10 @@ const Memories: React.FC = () => {
   // Upload Success Modal State
   const [uploadSuccessModalOpen, setUploadSuccessModalOpen] = useState<boolean>(false);
   const [uploadSuccessMessage, setUploadSuccessMessage] = useState<string>('');
+
+  // Change Date Modal State
+  const [changeDateModalOpen, setChangeDateModalOpen] = useState<boolean>(false);
+  const [changeDatePhoto, setChangeDatePhoto] = useState<MemoryPhoto | null>(null);
 
   // Modal Action Tooltip & Loading States
   const [modalTooltip, setModalTooltip] = useState<'copyImage' | 'copyUrl' | null>(null);
@@ -416,10 +421,10 @@ const Memories: React.FC = () => {
       const userID = await GetUserID();
       cacheKey =
         viewMode === 'unknown'
-          ? `journal_memories_cache_${userID}_unknown`
+          ? `journal_memories_cache_v2_${userID}_unknown`
           : viewMode === 'month'
-          ? `journal_memories_cache_${userID}_month_${currentYear}_${currentMonth}`
-          : `journal_memories_cache_${userID}_year_${currentYear}`;
+          ? `journal_memories_cache_v2_${userID}_month_${currentYear}_${currentMonth}`
+          : `journal_memories_cache_v2_${userID}_year_${currentYear}`;
 
       // Always show loading spinner immediately on collection switch
       if (isMounted.current && fetchId === currentFetchId.current) {
@@ -476,7 +481,7 @@ const Memories: React.FC = () => {
                 name: file.name,
                 url: piStorage.getFileUrl(file.viewUrl || file.relativePath),
                 thumbnail_url: piStorage.getThumbnailUrl(file.thumbnailUrl || file.relativePath),
-                date: 'Unknown-Date',
+                date: folder.name,
                 relativePath: file.relativePath,
               });
             }
@@ -806,6 +811,34 @@ const Memories: React.FC = () => {
     }
   };
 
+  // Context Menu / Modal Action: Open Change Date Modal
+  const handleOpenChangeDateModal = (photo: MemoryPhoto) => {
+    setContextMenu({ visible: false, x: 0, y: 0, photo: null });
+    setChangeDatePhoto(photo);
+    setChangeDateModalOpen(true);
+  };
+
+  // Action: Confirm Change Date and Move File in PiStorage
+  const handleConfirmChangeDate = async (newDate: string) => {
+    if (!changeDatePhoto) return;
+
+    const userID = await GetUserID();
+    const sourcePath =
+      changeDatePhoto.relativePath ||
+      `${piStorage.defaultFolder}/${userID}/${changeDatePhoto.date}/${changeDatePhoto.name}`;
+    const targetFolder = `${piStorage.defaultFolder}/${userID}/${newDate}`;
+
+    await piStorage.moveFile(sourcePath, targetFolder);
+
+    clearMemoriesCache();
+    setChangeDateModalOpen(false);
+    setChangeDatePhoto(null);
+    setViewingPhotoIndex(null);
+
+    await refreshMemoryIndex();
+    await fetchPhotos();
+  };
+
   // Helper to parse and queue selected/dropped files
   const processSelectedFiles = async (files: File[]) => {
     if (!files || files.length === 0) return;
@@ -1055,7 +1088,7 @@ const Memories: React.FC = () => {
             className="memories-nav-btn"
             onClick={() => navigate('/home')}
           >
-            <i className="fas fa-arrow-left"></i>Back to Home
+            <i className="fas fa-arrow-left"></i> Home
           </button>
 
           <select
@@ -1238,6 +1271,12 @@ const Memories: React.FC = () => {
               }}
             >
               <i className="fas fa-download"></i>Download
+            </li>
+            <li
+              className="change-date-option"
+              onClick={() => handleOpenChangeDateModal(contextMenu.photo!)}
+            >
+              <i className="far fa-calendar-alt"></i>Change date
             </li>
             <li
               className="delete-option"
@@ -1483,34 +1522,42 @@ const Memories: React.FC = () => {
 
                   {/* Batch Date Quick Setter */}
                   <div className="upload-batch-toolbar">
-                    <div className="upload-batch-toolbar-label">
-                      <i className="far fa-calendar-check text-primary"></i>
-                      <span>Set date for all photos:</span>
+                    <div className="upload-batch-section">
+                      <div className="upload-batch-toolbar-label">
+                        <i className="far fa-calendar-check text-primary"></i>
+                        <span>Set date for all:</span>
+                      </div>
+                      <div className="upload-batch-toolbar-actions">
+                        <input
+                          type="date"
+                          className="upload-batch-date-input"
+                          value={bulkDate}
+                          onChange={(e) => setBulkDate(e.target.value)}
+                          disabled={isUploading}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm py-1 px-2"
+                          onClick={handleApplyBulkDate}
+                          disabled={!bulkDate || isUploading}
+                          title="Apply selected date to all photos"
+                        >
+                          Apply
+                        </button>
+                      </div>
                     </div>
-                    <div className="upload-batch-toolbar-actions">
-                      <input
-                        type="date"
-                        className="upload-batch-date-input"
-                        value={bulkDate}
-                        onChange={(e) => setBulkDate(e.target.value)}
-                        disabled={isUploading}
-                      />
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm py-1 px-2"
-                        onClick={handleApplyBulkDate}
-                        disabled={!bulkDate || isUploading}
-                      >
-                        Apply
-                      </button>
+
+                    <div className="upload-batch-divider" role="separator"></div>
+
+                    <div className="upload-batch-section">
                       <button
                         type="button"
                         className="upload-batch-unknown-btn"
                         onClick={handleSetAllUnknown}
                         disabled={isUploading}
-                        title="Set date to 'Unknown' for all selected photos"
+                        title="Set all selected photos to Unknown Date"
                       >
-                        <i className="far fa-calendar-times me-1"></i>Set All Unknown
+                        <i className="far fa-calendar-times text-warning me-1"></i>Set All to Unknown
                       </button>
                     </div>
                   </div>
@@ -1570,22 +1617,22 @@ const Memories: React.FC = () => {
                           <div className="upload-card-date-field">
                             {item.date === 'Unknown-Date' ? (
                               <div>
-                                <div className="d-flex align-items-center justify-content-between mb-1">
-                                  <label className="upload-card-date-label mb-0">
+                                <div className="upload-card-date-header">
+                                  <label className="upload-card-date-label">
                                     <i className="far fa-calendar-alt text-primary"></i>Date (LA):
                                   </label>
                                   <button
                                     type="button"
-                                    className="btn btn-link btn-sm p-0 text-primary text-decoration-none"
-                                    style={{ fontSize: '0.72rem' }}
+                                    className="upload-card-set-date-btn"
                                     onClick={() => handleUpdateBatchFileDate(idx, toLosAngelesDateString(new Date()))}
                                     disabled={isUploading}
+                                    title="Assign a date to this photo"
                                   >
                                     <i className="fas fa-calendar-day me-1"></i>Set Date
                                   </button>
                                 </div>
                                 <div className="upload-card-unknown-box">
-                                  <span className="small text-white">
+                                  <span className="small text-white d-flex align-items-center">
                                     <i className="far fa-calendar-times text-warning me-1"></i>Unknown Date
                                   </span>
                                   <span className="badge bg-secondary" style={{ fontSize: '0.62rem' }}>Unknown-Date</span>
@@ -1593,31 +1640,19 @@ const Memories: React.FC = () => {
                               </div>
                             ) : (
                               <div>
-                                <div className="d-flex align-items-center justify-content-between mb-1">
-                                  <label className="upload-card-date-label mb-0">
+                                <div className="upload-card-date-header">
+                                  <label className="upload-card-date-label">
                                     <i className="far fa-calendar-alt text-primary"></i>Date (LA):
                                   </label>
-                                  <div className="d-flex align-items-center gap-1">
-                                    {!item.isOriginalDate && (
-                                      <span
-                                        className="badge bg-warning text-dark py-0 px-1"
-                                        style={{ fontSize: '0.62rem' }}
-                                        title="Estimated date — please verify or mark as Unknown"
-                                      >
-                                        <i className="fas fa-triangle-exclamation me-1"></i>Check date
-                                      </span>
-                                    )}
-                                    <button
-                                      type="button"
-                                      className="btn btn-outline-secondary btn-sm py-0 px-1"
-                                      style={{ fontSize: '0.65rem' }}
-                                      onClick={() => handleUpdateBatchFileDate(idx, 'Unknown-Date')}
-                                      disabled={isUploading}
-                                      title="Mark this photo as having an Unknown Date"
-                                    >
-                                      Unknown
-                                    </button>
-                                  </div>
+                                  <button
+                                    type="button"
+                                    className="upload-card-unknown-btn"
+                                    onClick={() => handleUpdateBatchFileDate(idx, 'Unknown-Date')}
+                                    disabled={isUploading}
+                                    title="Mark this photo as having an Unknown Date"
+                                  >
+                                    Unknown
+                                  </button>
                                 </div>
                                 <input
                                   type="date"
@@ -1626,15 +1661,6 @@ const Memories: React.FC = () => {
                                   onChange={(e) => handleUpdateBatchFileDate(idx, e.target.value)}
                                   disabled={isUploading}
                                 />
-                                {!item.isOriginalDate && (
-                                  <div
-                                    className="upload-card-warning-text"
-                                    title="Date not from original EXIF metadata (DateTimeOriginal or CreateDate). Set manually or mark as Unknown."
-                                  >
-                                    <i className="fas fa-circle-exclamation text-warning"></i>
-                                    <span>Estimated date — verify or mark Unknown</span>
-                                  </div>
-                                )}
                               </div>
                             )}
                           </div>
@@ -1901,6 +1927,15 @@ const Memories: React.FC = () => {
 
                   <button
                     type="button"
+                    className="content-modal-action-item change-date-action"
+                    onClick={() => handleOpenChangeDateModal(photos[viewingPhotoIndex])}
+                  >
+                    <i className="far fa-calendar-alt"></i>
+                    <span>Change date</span>
+                  </button>
+
+                  <button
+                    type="button"
                     className="content-modal-action-item delete-action"
                     onClick={() => handleDeleteMemory(photos[viewingPhotoIndex])}
                   >
@@ -1935,6 +1970,18 @@ const Memories: React.FC = () => {
         onClose={() => setUploadSuccessModalOpen(false)}
         title="Successfully Uploaded"
         message={uploadSuccessMessage}
+      />
+
+      {/* Change Date Modal */}
+      <ChangeDateModal
+        isOpen={changeDateModalOpen}
+        photoName={changeDatePhoto?.name ?? null}
+        currentDate={changeDatePhoto?.date ?? null}
+        onClose={() => {
+          setChangeDateModalOpen(false);
+          setChangeDatePhoto(null);
+        }}
+        onConfirm={handleConfirmChangeDate}
       />
     </div>
   );
