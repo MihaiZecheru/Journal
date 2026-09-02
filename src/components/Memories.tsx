@@ -144,16 +144,40 @@ const Memories: React.FC = () => {
   // Copy Short URL Modal State
   const [shortUrlModalOpen, setShortUrlModalOpen] = useState<boolean>(false);
   const [isGeneratingShortUrl, setIsGeneratingShortUrl] = useState<boolean>(false);
-  const [shortUrlData, setShortUrlData] = useState<{ shortUrl: string; destinationUrl: string } | null>(null);
+  const [shortUrlData, setShortUrlData] = useState<{ shortUrl: string | null; destinationUrl: string } | null>(null);
   const [shortUrlError, setShortUrlError] = useState<string | null>(null);
   const [copiedTooltip, setCopiedTooltip] = useState<boolean>(false);
+  const [copiedLongTooltip, setCopiedLongTooltip] = useState<boolean>(false);
   const tooltipTimeoutRef = useRef<any>(null);
+  const longTooltipTimeoutRef = useRef<any>(null);
+
+  // Modal Action Tooltip & Loading States
+  const [modalTooltip, setModalTooltip] = useState<'copyImage' | 'copyUrl' | null>(null);
+  const modalTooltipTimeoutRef = useRef<any>(null);
+  const [isCopyingImage, setIsCopyingImage] = useState<boolean>(false);
+  const shortUrlCache = useRef<Record<string, string>>({});
+
+  const showModalTooltip = (type: 'copyImage' | 'copyUrl') => {
+    setModalTooltip(type);
+    if (modalTooltipTimeoutRef.current) {
+      clearTimeout(modalTooltipTimeoutRef.current);
+    }
+    modalTooltipTimeoutRef.current = setTimeout(() => {
+      setModalTooltip(null);
+    }, 2000);
+  };
 
   useEffect(() => {
     return () => {
       if (tooltipTimeoutRef.current) clearTimeout(tooltipTimeoutRef.current);
+      if (longTooltipTimeoutRef.current) clearTimeout(longTooltipTimeoutRef.current);
+      if (modalTooltipTimeoutRef.current) clearTimeout(modalTooltipTimeoutRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    setModalTooltip(null);
+  }, [viewingPhotoIndex]);
 
   // Keyboard navigation for Content Viewing Modal
   useEffect(() => {
@@ -191,6 +215,7 @@ const Memories: React.FC = () => {
 
   const handleCloseContentModal = () => {
     setViewingPhotoIndex(null);
+    setModalTooltip(null);
   };
 
   // Helper to clear all session memories cache entries when mutations happen
@@ -556,13 +581,34 @@ const Memories: React.FC = () => {
   const handleOpenShortUrlModal = async (photo: MemoryPhoto) => {
     setContextMenu({ visible: false, x: 0, y: 0, photo: null });
     setShortUrlModalOpen(true);
-    setIsGeneratingShortUrl(true);
     setShortUrlError(null);
-    setShortUrlData(null);
     setCopiedTooltip(false);
+    setCopiedLongTooltip(false);
+
+    if (shortUrlCache.current[photo.url]) {
+      const cached = shortUrlCache.current[photo.url];
+      setShortUrlData({
+        shortUrl: cached,
+        destinationUrl: photo.url,
+      });
+      setIsGeneratingShortUrl(false);
+      try {
+        await navigator.clipboard.writeText(cached);
+      } catch (cErr) {
+        console.warn('Clipboard write error:', cErr);
+      }
+      return;
+    }
+
+    setShortUrlData({
+      shortUrl: null,
+      destinationUrl: photo.url,
+    });
+    setIsGeneratingShortUrl(true);
 
     try {
       const bebRes = await createBebShortUrl(photo.url);
+      shortUrlCache.current[photo.url] = bebRes.shortUrl;
       setShortUrlData({
         shortUrl: bebRes.shortUrl,
         destinationUrl: photo.url,
@@ -575,8 +621,17 @@ const Memories: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Failed to create short URL:', err);
-      setShortUrlError(err.message || 'Failed to generate short URL');
+      setShortUrlError(err.message || 'Short URL service is currently unreachable.');
+      setShortUrlData({
+        shortUrl: null,
+        destinationUrl: photo.url,
+      });
       setIsGeneratingShortUrl(false);
+      try {
+        await navigator.clipboard.writeText(photo.url);
+      } catch (cErr) {
+        console.warn('Clipboard write error:', cErr);
+      }
     }
   };
 
@@ -591,6 +646,53 @@ const Memories: React.FC = () => {
       }, 2000);
     } catch (err) {
       console.error('Copy short URL failed:', err);
+    }
+  };
+
+  const handleCopyLongUrl = async () => {
+    if (!shortUrlData?.destinationUrl) return;
+    try {
+      await navigator.clipboard.writeText(shortUrlData.destinationUrl);
+      setCopiedLongTooltip(true);
+      if (longTooltipTimeoutRef.current) clearTimeout(longTooltipTimeoutRef.current);
+      longTooltipTimeoutRef.current = setTimeout(() => {
+        setCopiedLongTooltip(false);
+      }, 2000);
+    } catch (err) {
+      console.error('Copy long URL failed:', err);
+    }
+  };
+
+  // Image Viewer Modal Action: Copy Image (Shows tooltip above button, no alert popups)
+  const handleModalCopyImage = async (photo: MemoryPhoto) => {
+    if (isCopyingImage) return;
+    try {
+      if (!navigator.clipboard || !window.ClipboardItem) {
+        console.warn('Image copying is not supported by your browser.');
+        return;
+      }
+      setIsCopyingImage(true);
+      const pngBlob = await convertImageToPngBlob(photo.url);
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'image/png': pngBlob,
+        }),
+      ]);
+      showModalTooltip('copyImage');
+    } catch (err: any) {
+      console.error('Error copying image to clipboard:', err);
+    } finally {
+      setIsCopyingImage(false);
+    }
+  };
+
+  // Image Viewer Modal Action: Copy Image URL (Shows tooltip above button, no alert popups)
+  const handleModalCopyUrl = async (photo: MemoryPhoto) => {
+    try {
+      await navigator.clipboard.writeText(photo.url);
+      showModalTooltip('copyUrl');
+    } catch (err) {
+      console.error('Failed to copy URL:', err);
     }
   };
 
@@ -1370,17 +1472,24 @@ const Memories: React.FC = () => {
                   <button
                     type="button"
                     className="content-modal-action-item"
-                    onClick={() => handleCopyImage(photos[viewingPhotoIndex])}
+                    onClick={() => handleModalCopyImage(photos[viewingPhotoIndex])}
+                    disabled={isCopyingImage}
                   >
-                    <i className="fas fa-copy"></i>
+                    {modalTooltip === 'copyImage' && (
+                      <span className="copied-tooltip">Copied!</span>
+                    )}
+                    <i className={isCopyingImage ? "fas fa-spinner fa-spin" : "fas fa-copy"}></i>
                     <span>Copy image</span>
                   </button>
 
                   <button
                     type="button"
                     className="content-modal-action-item"
-                    onClick={() => handleCopyUrl(photos[viewingPhotoIndex])}
+                    onClick={() => handleModalCopyUrl(photos[viewingPhotoIndex])}
                   >
+                    {modalTooltip === 'copyUrl' && (
+                      <span className="copied-tooltip">Copied!</span>
+                    )}
                     <i className="fas fa-link"></i>
                     <span>Copy image URL</span>
                   </button>
@@ -1439,74 +1548,95 @@ const Memories: React.FC = () => {
                 <div className="short-url-loading-text">Generating short URL...</div>
                 <div className="short-url-loading-subtext">Connecting to beb.mzecheru.com</div>
               </div>
-            ) : shortUrlError ? (
-              <div className="short-url-error-container">
-                <div className="short-url-error-icon">
-                  <i className="fas fa-triangle-exclamation"></i>
-                </div>
-                <h5 className="text-white fw-bold mb-2">Failed to Generate Short URL</h5>
-                <p className="text-muted small mb-3">{shortUrlError}</p>
-                <div className="d-flex justify-content-center gap-2">
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => setShortUrlModalOpen(false)}
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
             ) : shortUrlData && (
               <>
-                {/* Header */}
-                <div className="short-url-header">
-                  <div className="short-url-check-circle">
-                    <div className="short-url-check-inner">
-                      <i className="fas fa-check"></i>
+                {/* Header: Success or Service Failure Notice */}
+                {shortUrlError ? (
+                  <div className="short-url-header">
+                    <div className="short-url-warn-circle">
+                      <div className="short-url-warn-inner">
+                        <i className="fas fa-triangle-exclamation"></i>
+                      </div>
+                    </div>
+                    <div>
+                      <h4 className="short-url-title">Short URL Service Failed</h4>
+                      <p className="short-url-subtitle text-warning">
+                        Short URL generation failed. Full image URL copied to clipboard:
+                      </p>
                     </div>
                   </div>
-                  <div>
-                    <h4 className="short-url-title">Share Link Ready</h4>
-                    <p className="short-url-subtitle">
-                      7-day short link generated &amp; copied to clipboard:
-                    </p>
+                ) : (
+                  <div className="short-url-header">
+                    <div className="short-url-check-circle">
+                      <div className="short-url-check-inner">
+                        <i className="fas fa-check"></i>
+                      </div>
+                    </div>
+                    <div>
+                      <h4 className="short-url-title">Share Link Ready</h4>
+                      <p className="short-url-subtitle">
+                        7-day short link generated &amp; copied to clipboard:
+                      </p>
+                    </div>
                   </div>
-                </div>
+                )}
 
-                {/* Primary Box: Short URL with Copy button and Tooltip */}
-                <div className="short-url-box primary-link-box">
+                {/* Primary Box: Short URL (only shown when short URL was successfully generated) */}
+                {shortUrlData.shortUrl && (
+                  <div className="short-url-box primary-link-box">
+                    <div className="short-url-link-group">
+                      <i className="fas fa-link link-icon primary-link-icon"></i>
+                      <span className="short-url-text">{shortUrlData.shortUrl}</span>
+                    </div>
+                    <div className="copy-btn-wrapper">
+                      {copiedTooltip && (
+                        <span className="copied-tooltip">
+                          Copied!
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        className="short-url-copy-btn"
+                        onClick={handleCopyShortUrl}
+                        title="Copy short link"
+                      >
+                        <i className="far fa-copy"></i>
+                        <span>Copy</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Secondary Box: Destination Signed URL with Copy button */}
+                <div className="destination-header-row">
+                  <span className="destination-label">
+                    {shortUrlData.shortUrl ? 'DESTINATION SIGNED URL' : 'FULL IMAGE URL'}
+                  </span>
+                  <span className="destination-status">Expires in 1 week</span>
+                </div>
+                <div className={`short-url-box destination-box${!shortUrlData.shortUrl ? ' standalone-destination-box' : ''}`}>
                   <div className="short-url-link-group">
-                    <i className="fas fa-link link-icon primary-link-icon"></i>
-                    <span className="short-url-text">{shortUrlData.shortUrl}</span>
+                    <i className="fas fa-link link-icon destination-link-icon"></i>
+                    <span className="destination-url-text" title={shortUrlData.destinationUrl}>
+                      {shortUrlData.destinationUrl}
+                    </span>
                   </div>
                   <div className="copy-btn-wrapper">
-                    {copiedTooltip && (
-                      <div className="copied-tooltip">
-                        Copied
-                      </div>
+                    {copiedLongTooltip && (
+                      <span className="copied-tooltip">
+                        Copied!
+                      </span>
                     )}
                     <button
                       type="button"
                       className="short-url-copy-btn"
-                      onClick={handleCopyShortUrl}
-                      title="Copy short link"
+                      onClick={handleCopyLongUrl}
+                      title="Copy full URL"
                     >
                       <i className="far fa-copy"></i>
                       <span>Copy</span>
                     </button>
                   </div>
-                </div>
-
-                {/* Secondary Box: Destination Signed URL */}
-                <div className="destination-header-row">
-                  <span className="destination-label">DESTINATION SIGNED URL</span>
-                  <span className="destination-status">Expires in 1 week</span>
-                </div>
-                <div className="short-url-box destination-box">
-                  <i className="fas fa-link link-icon destination-link-icon"></i>
-                  <span className="destination-url-text" title={shortUrlData.destinationUrl}>
-                    {shortUrlData.destinationUrl}
-                  </span>
                 </div>
 
                 {/* Bottom Got It Button */}

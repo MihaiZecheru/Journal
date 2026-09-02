@@ -529,6 +529,7 @@
 }
 
 .content-modal-action-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -553,14 +554,19 @@
   transition: color 0.15s ease;
 }
 
-.content-modal-action-item:hover {
+.content-modal-action-item:hover:not(:disabled) {
   background: #1e293b;
   border-color: rgba(255, 255, 255, 0.08);
   color: #60a5fa;
 }
 
-.content-modal-action-item:hover i {
+.content-modal-action-item:hover:not(:disabled) i {
   color: #60a5fa;
+}
+
+.content-modal-action-item:disabled {
+  opacity: 0.65;
+  cursor: wait;
 }
 
 .content-modal-action-item.delete-action {
@@ -655,6 +661,30 @@
   align-items: center;
   justify-content: center;
   font-size: 13px;
+  font-weight: 700;
+}
+
+.short-url-warn-circle {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(245, 158, 11, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.short-url-warn-inner {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #f59e0b;
+  color: #020617;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -798,9 +828,16 @@
 }
 
 .destination-box {
+  justify-content: space-between;
   gap: 10px;
   padding: 8px 12px;
   margin-bottom: 1.5rem;
+}
+
+.destination-box.standalone-destination-box {
+  background: rgba(15, 23, 42, 0.9);
+  border-color: rgba(245, 158, 11, 0.25);
+  padding: 10px 14px;
 }
 
 .destination-link-icon {
