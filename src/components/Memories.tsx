@@ -4,14 +4,18 @@ import { Modal } from 'mdb-ui-kit';
 import supabase from '../database/config/supabase';
 import { GetUserID } from '../database/GetUser';
 import fileDownload from 'js-file-download';
-import { getPhotoDate, formatDateOrdinal, generateMemoriesFileName } from '../utils/exifUtils';
+import { getPhotoDate, formatDateOrdinal } from '../utils/exifUtils';
+import { piStorage } from '../lib/pistorage';
+import { createBebShortUrl } from '../lib/beb';
 import Entry from '../database/Entry';
 import '../styles/memories.css';
 
 interface MemoryPhoto {
   name: string;
-  url: string;
+  url: string; // Full-resolution actual image URL
+  thumbnail_url: string; // Fast WebP thumbnail URL
   date: string;
+  relativePath?: string;
 }
 
 interface FailedUploadItem {
@@ -155,18 +159,17 @@ const Memories: React.FC = () => {
     return () => window.removeEventListener('click', handleGlobalClick);
   }, [contextMenu.visible]);
 
-  // Index all memory dates from Supabase Storage
+  // Index all memory dates from PiStorage
   const refreshMemoryIndex = async () => {
     try {
       const userID = await GetUserID();
-      const { data: dateFolders, error } = await supabase.storage
-        .from('Memories')
-        .list(userID, { limit: 10000 });
+      const userFolder = `${piStorage.defaultFolder}/${userID}`;
+      const tree = await piStorage.getDirectoryTree(userFolder);
 
       if (!isMounted.current) return;
 
-      if (error || !dateFolders) {
-        console.error('Error listing date folders for index:', error);
+      const dateFolders = tree.directories || [];
+      if (!dateFolders.length) {
         setAvailableMonths([]);
         setAvailableYears([]);
         setIndexLoaded(true);
@@ -185,11 +188,11 @@ const Memories: React.FC = () => {
 
         if (monthKey > realCurrentMonthKey) continue;
 
-        const { data: files } = await supabase.storage
-          .from('Memories')
-          .list(`${userID}/${folder.name}`, { limit: 10000 });
-
-        const count = files ? files.filter(f => f.name && !f.name.startsWith('.')).length : 0;
+        let count = typeof folder.itemCount === 'number' ? folder.itemCount : 0;
+        if (count === 0) {
+          const fTree = await piStorage.getDirectoryTree(folder.relativePath);
+          count = fTree?.files ? fTree.files.filter((f) => f.name && !f.name.startsWith('.')).length : 0;
+        }
         if (count === 0) continue;
 
         if (!monthCounts[monthKey]) {
@@ -288,85 +291,44 @@ const Memories: React.FC = () => {
       const monthPrefix = `${currentYear}-${monthStr}-`;
       const yearPrefix = `${currentYear}-`;
 
-      const { data: dateFolders, error: listError } = await supabase.storage
-        .from('Memories')
-        .list(userID, { limit: 10000 });
+      const userFolder = `${piStorage.defaultFolder}/${userID}`;
+      const tree = await piStorage.getDirectoryTree(userFolder);
 
       if (!isMounted.current || fetchId !== currentFetchId.current) return;
 
-      if (listError || !dateFolders) {
-        setPhotos([]);
-        setLoading(false);
-        return;
-      }
-
+      const dateFolders = tree.directories || [];
       const matchingFolders = dateFolders.filter((folder) => {
         if (!folder.name || !folder.name.match(/^\d{4}-\d{2}-\d{2}$/)) return false;
         if (viewMode === 'month') return folder.name.startsWith(monthPrefix);
         return folder.name.startsWith(yearPrefix);
       });
 
-      const allPhotoPaths: { name: string; date: string; path: string }[] = [];
+      const allPhotos: MemoryPhoto[] = [];
 
       for (const folder of matchingFolders) {
-        const { data: filesInFolder, error: filesErr } = await supabase.storage
-          .from('Memories')
-          .list(`${userID}/${folder.name}`, { limit: 10000 });
-
-        if (filesErr || !filesInFolder) continue;
-
-        filesInFolder.forEach((file) => {
-          if (file.name && !file.name.startsWith('.')) {
-            allPhotoPaths.push({
-              name: file.name,
-              date: folder.name,
-              path: `${userID}/${folder.name}/${file.name}`,
-            });
-          }
-        });
+        const folderTree = await piStorage.getDirectoryTree(folder.relativePath);
+        if (folderTree && folderTree.files) {
+          folderTree.files.forEach((file) => {
+            if (file.name && !file.name.startsWith('.')) {
+              allPhotos.push({
+                name: file.name,
+                url: piStorage.getFileUrl(file.viewUrl || file.relativePath),
+                thumbnail_url: piStorage.getThumbnailUrl(file.thumbnailUrl || file.relativePath),
+                date: folder.name,
+                relativePath: file.relativePath,
+              });
+            }
+          });
+        }
       }
 
       if (!isMounted.current || fetchId !== currentFetchId.current) return;
 
       // Sort photos chronologically by date and filename
-      allPhotoPaths.sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
+      allPhotos.sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
 
-      if (allPhotoPaths.length === 0) {
-        setPhotos([]);
-        sessionStorage.setItem(cacheKey, JSON.stringify({ photos: [], timestamp: Date.now() }));
-      } else {
-        const { data: signedUrls, error: urlErr } = await supabase.storage
-          .from('Memories')
-          .createSignedUrls(
-            allPhotoPaths.map((p) => p.path),
-            3600 * 24 * 7
-          );
-
-        if (!isMounted.current || fetchId !== currentFetchId.current) return;
-
-        if (urlErr || !signedUrls) {
-          if (!cachedData) setPhotos([]);
-        } else {
-          // Build deterministic path -> signedUrl map to prevent index mismatch between years/folders
-          const urlMap = new Map<string, string>();
-          signedUrls.forEach((item) => {
-            if (item.signedUrl && item.path) {
-              urlMap.set(item.path, item.signedUrl);
-            }
-          });
-
-          const freshPhotos: MemoryPhoto[] = allPhotoPaths
-            .filter((p) => urlMap.has(p.path))
-            .map((p) => ({
-              name: p.name,
-              url: urlMap.get(p.path)!,
-              date: p.date,
-            }));
-
-          setPhotos(freshPhotos);
-          sessionStorage.setItem(cacheKey, JSON.stringify({ photos: freshPhotos, timestamp: Date.now() }));
-        }
-      }
+      setPhotos(allPhotos);
+      sessionStorage.setItem(cacheKey, JSON.stringify({ photos: allPhotos, timestamp: Date.now() }));
     } catch (err) {
       console.error('Error fetching photos:', err);
       if (isMounted.current && fetchId === currentFetchId.current && !sessionStorage.getItem(cacheKey)) {
@@ -539,37 +501,33 @@ const Memories: React.FC = () => {
   const handleSendToFriend = async (photo: MemoryPhoto) => {
     setContextMenu({ visible: false, x: 0, y: 0, photo: null });
     try {
-      if (navigator.share) {
-        const response = await fetch(photo.url);
-        const blob = await response.blob();
-        const file = new File([blob], photo.name, { type: blob.type || 'image/jpeg' });
+      // Generate a short URL with a random 9-digit hexadecimal alias pointing to the image URL
+      let shareUrl = photo.url;
+      try {
+        const bebRes = await createBebShortUrl(photo.url);
+        shareUrl = bebRes.shortUrl;
+      } catch (shortErr) {
+        console.warn('Could not generate Beb short link, falling back to full image URL:', shortErr);
+      }
 
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      if (navigator.share) {
+        try {
           await navigator.share({
             title: 'Journal Memory Photo',
             text: `Check out this memory photo from ${formatDateOrdinal(photo.date)}!`,
-            files: [file],
+            url: shareUrl,
           });
           return;
-        } else {
-          await navigator.share({
-            title: 'Journal Memory Photo',
-            text: `Check out this memory photo from ${formatDateOrdinal(photo.date)}!`,
-            url: photo.url,
-          });
-          return;
+        } catch (err: any) {
+          if (err.name === 'AbortError') return;
+          console.warn('Native share error:', err);
         }
       }
-    } catch (err: any) {
-      if (err.name === 'AbortError') return;
-      console.warn('Native share error:', err);
-    }
 
-    try {
-      await navigator.clipboard.writeText(photo.url);
-      alert('Photo link copied! You can now paste and send it to a friend.');
-    } catch (e) {
-      alert('Photo link: ' + photo.url);
+      await navigator.clipboard.writeText(shareUrl);
+      alert(`Shortened photo link (${shareUrl}) copied to clipboard! You can now send it to a friend.`);
+    } catch (e: any) {
+      alert('Could not share photo link: ' + (e.message || e));
     }
   };
 
@@ -581,21 +539,15 @@ const Memories: React.FC = () => {
 
     try {
       const userID = await GetUserID();
-      const { error } = await supabase.storage
-        .from('Memories')
-        .remove([`${userID}/${photo.date}/${photo.name}`]);
-
-      if (error) {
-        alert('Failed to delete memory: ' + error.message);
-        return;
-      }
+      const targetPath = photo.relativePath || `${piStorage.defaultFolder}/${userID}/${photo.date}/${photo.name}`;
+      await piStorage.deleteFile(targetPath);
 
       clearMemoriesCache();
       setPhotos((prev) => prev.filter((p) => !(p.name === photo.name && p.date === photo.date)));
       await refreshMemoryIndex();
     } catch (err: any) {
       console.error('Error deleting memory:', err);
-      alert('Failed to delete memory.');
+      alert('Failed to delete memory: ' + (err.message || 'Unknown error'));
     }
   };
 
@@ -668,34 +620,40 @@ const Memories: React.FC = () => {
         const datesArr = Object.keys(grouped);
         for (const date of datesArr) {
           const filesForDate = grouped[date];
+          const targetFolder = `${piStorage.defaultFolder}/${userID}/${date}`;
 
-          const { data: existingFiles } = await supabase.storage
-            .from('Memories')
-            .list(`${userID}/${date}`, { limit: 10000 });
+          setUploadStatus(
+            `Uploading ${filesForDate.length} photo(s) to PiStorage (${date})...`
+          );
 
-          const existingCount = existingFiles ? existingFiles.length : 0;
+          try {
+            const uploadRes = await piStorage.uploadFiles(targetFolder, filesForDate);
+            uploadedSuccessCount += uploadRes.uploadedCount || 0;
 
-          for (let j = 0; j < filesForDate.length; j++) {
-            const file = filesForDate[j];
-            const customName = generateMemoriesFileName(
-              userID,
-              date,
-              existingCount,
-              j + 1,
-              file.name
-            );
-
-            setUploadStatus(
-              `Uploading photo ${uploadedSuccessCount + 1}/${filesToUpload.length} (${date})...`
-            );
-
-            const { error: uploadErr } = await supabase.storage
-              .from('Memories')
-              .upload(`${userID}/${date}/${customName}`, file, { upsert: true });
-
-            if (!uploadErr) {
-              uploadedSuccessCount++;
+            if (uploadRes.failed && uploadRes.failed.length > 0) {
+              uploadRes.failed.forEach((fail) => {
+                const originalName = fail.original_name || fail.original_filename;
+                const matchedFile = filesForDate.find((f) => f.name === originalName) || filesForDate[0];
+                newFailedUploads.push({
+                  id: Math.random().toString(36).substring(2, 9),
+                  file: matchedFile,
+                  date,
+                  formattedDate: formatDateOrdinal(date),
+                  reason: fail.error || 'Server rejected file upload',
+                });
+              });
             }
+          } catch (uploadErr: any) {
+            console.error(`Error uploading files for ${date}:`, uploadErr);
+            filesForDate.forEach((file) => {
+              newFailedUploads.push({
+                id: Math.random().toString(36).substring(2, 9),
+                file,
+                date,
+                formattedDate: formatDateOrdinal(date),
+                reason: uploadErr.message || 'Upload failed',
+              });
+            });
           }
         }
       }
@@ -741,27 +699,11 @@ const Memories: React.FC = () => {
         return;
       }
 
-      const { data: existingFiles } = await supabase.storage
-        .from('Memories')
-        .list(`${userID}/${failedItem.date}`, { limit: 10000 });
+      const targetFolder = `${piStorage.defaultFolder}/${userID}/${failedItem.date}`;
+      const uploadRes = await piStorage.uploadFiles(targetFolder, [failedItem.file]);
 
-      const existingCount = existingFiles ? existingFiles.length : 0;
-      const customName = generateMemoriesFileName(
-        userID,
-        failedItem.date,
-        existingCount,
-        1,
-        failedItem.file.name
-      );
-
-      const { error: uploadErr } = await supabase.storage
-        .from('Memories')
-        .upload(`${userID}/${failedItem.date}/${customName}`, failedItem.file, {
-          upsert: true,
-        });
-
-      if (uploadErr) {
-        alert(`Upload failed: ${uploadErr.message}`);
+      if (uploadRes.failed && uploadRes.failed.length > 0) {
+        alert(`Upload failed: ${uploadRes.failed[0].error}`);
         return;
       }
 
@@ -886,9 +828,21 @@ const Memories: React.FC = () => {
             <div
               key={idx}
               className="memory-card"
+              onClick={() => window.open(photo.url, '_blank')}
               onContextMenu={(e) => handleContextMenu(e, photo)}
+              style={{ cursor: 'pointer' }}
+              title={`Click to view full image (${photo.name})`}
             >
-              <img src={photo.url} alt={photo.name} />
+              <img
+                src={photo.thumbnail_url || photo.url}
+                alt={photo.name}
+                loading="lazy"
+                onError={(e) => {
+                  if (e.currentTarget.src !== photo.url) {
+                    e.currentTarget.src = photo.url;
+                  }
+                }}
+              />
               <div className="memory-card-date">
                 {formatDateOrdinal(photo.date)}
               </div>

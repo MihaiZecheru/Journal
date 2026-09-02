@@ -33,9 +33,6 @@ const Login = () => {
       const email = emailBox.value;
       const password = passwordBox.value;
 
-      if (email === 'chris') return await supabase.auth.signInWithPassword({ email: process.env.REACT_APP_CHRIS_LOGIN_EMAIL!, password: process.env.REACT_APP_CHRIS_LOGIN_PASSWORD! });
-      else if (email === 'erin') return await supabase.auth.signInWithPassword({ email: process.env.REACT_APP_ERIN_LOGIN_EMAIL!, password: process.env.REACT_APP_ERIN_LOGIN_PASSWORD! });
-
       if (!email || !password) return;
       let { error } = await supabase.auth.signInWithPassword({ email, password });
 

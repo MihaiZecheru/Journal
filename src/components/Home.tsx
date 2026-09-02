@@ -18,7 +18,8 @@ import { useNavigate } from 'react-router-dom';
 import fileDownload from 'js-file-download'
 import { UserID } from '../database/ID';
 import { createShareLink } from '../database/createShareLink';
-import { getPhotoDate, generateMemoriesFileName } from '../utils/exifUtils';
+import { getPhotoDate } from '../utils/exifUtils';
+import { piStorage } from '../lib/pistorage';
 import { getPendingSharedPhotos, clearSharedPhotos } from '../utils/sharedPhotosDb';
 
 function mobileCheck() {
@@ -135,7 +136,13 @@ const Home = () => {
   const viewMemoriesModal = useRef<HTMLDivElement>(null);
   const viewMemoriesModalBody = useRef<HTMLDivElement>(null);
   const viewMemoriesModalDateDisplay = useRef<HTMLSpanElement>(null);
-  const [viewMemoriesModalFiles, setViewMemoriesModalFiles] = useState<{ name: string, url: string, date: string}[]>([]);
+  const [viewMemoriesModalFiles, setViewMemoriesModalFiles] = useState<{
+    name: string;
+    url: string;
+    thumbnail_url: string;
+    date: string;
+    relativePath?: string;
+  }[]>([]);
 
   // View entry memories modal
   const viewEntryMemoriesModal = useRef<HTMLDivElement>(null);
@@ -182,30 +189,18 @@ const Home = () => {
       for (let i = 0; i < dates.length; i++) {
         const date = dates[i];
         const filesForDate = groupedByDate[date];
+        const targetFolder = `${piStorage.defaultFolder}/${userID}/${date}`;
 
-        const { data: existingFiles, error: listErr } = await supabase.storage
-          .from('Memories')
-          .list(`${userID}/${date}`, { limit: 10000 });
+        setBatchUploadStatus(`Uploading ${filesForDate.length} photo(s) (${date})...`);
 
-        if (listErr) console.error(`Error checking memories for ${date}:`, listErr);
-
-        const existingCount = existingFiles ? existingFiles.length : 0;
-
-        for (let j = 0; j < filesForDate.length; j++) {
-          const file = filesForDate[j];
-          const customName = generateMemoriesFileName(userID, date, existingCount, j + 1, file.name);
-
-          setBatchUploadStatus(`Uploading photo ${totalUploaded + 1}/${batchFiles.length} (${date})...`);
-
-          const { error: uploadErr } = await supabase.storage
-            .from('Memories')
-            .upload(`${userID}/${date}/${customName}`, file, { upsert: true });
-
-          if (uploadErr) {
-            console.error(`Error uploading ${customName}:`, uploadErr);
-          } else {
-            totalUploaded++;
+        try {
+          const uploadRes = await piStorage.uploadFiles(targetFolder, filesForDate);
+          totalUploaded += uploadRes.uploadedCount || 0;
+          if (uploadRes.failed && uploadRes.failed.length > 0) {
+            console.warn(`Some files failed to upload for ${date}:`, uploadRes.failed);
           }
+        } catch (uploadErr) {
+          console.error(`Error uploading files for ${date}:`, uploadErr);
         }
       }
 
@@ -242,21 +237,13 @@ const Home = () => {
       const dates = Object.keys(groupedByDate);
       for (const date of dates) {
         const filesForDate = groupedByDate[date];
-        const { data: existingFiles } = await supabase.storage
-          .from('Memories')
-          .list(`${userID}/${date}`, { limit: 10000 });
+        const targetFolder = `${piStorage.defaultFolder}/${userID}/${date}`;
 
-        const existingCount = existingFiles ? existingFiles.length : 0;
-
-        for (let j = 0; j < filesForDate.length; j++) {
-          const file = filesForDate[j];
-          const customName = generateMemoriesFileName(userID, date, existingCount, j + 1, file.name);
-
-          const { error: uploadErr } = await supabase.storage
-            .from('Memories')
-            .upload(`${userID}/${date}/${customName}`, file, { upsert: true });
-
-          if (!uploadErr) uploadedCount++;
+        try {
+          const uploadRes = await piStorage.uploadFiles(targetFolder, filesForDate);
+          uploadedCount += uploadRes.uploadedCount || 0;
+        } catch (uploadErr) {
+          console.error(`Error uploading shared photos for ${date}:`, uploadErr);
         }
       }
 
@@ -469,35 +456,25 @@ const Home = () => {
       `;
 
       (async () => {
-        const userID = await GetUserID();
+        try {
+          const userID = await GetUserID();
+          const targetFolder = `${piStorage.defaultFolder}/${userID}/${existingEntry.date}`;
+          const tree = await piStorage.getDirectoryTree(targetFolder);
 
-        const { data, error } = await supabase.storage
-          .from('Memories')
-          .list(`${userID}/${existingEntry.date}`);
-
-        if (error) {
-          console.error(`Error listing files: ${error.message}`);
-          throw error;
-        }
-
-        if (!data.length) setViewMemoriesModalFiles([]);
-        else {
-          const { data: urls, error: urls_error } = await supabase.storage
-            .from('Memories')
-            .createSignedUrls(data.map((file: any) => `${userID}/${existingEntry.date}/${file.name}`), 3600 * 24 * 7);
-
-          if (urls_error) {
-            console.error(`Error getting signed URLs: ${urls_error.message}`);
-            throw urls_error;
+          if (!tree.files || !tree.files.length) {
+            setViewMemoriesModalFiles([]);
+          } else {
+            setViewMemoriesModalFiles(tree.files.map((file) => ({
+              name: file.name,
+              url: piStorage.getFileUrl(file.viewUrl || file.relativePath),
+              thumbnail_url: piStorage.getThumbnailUrl(file.thumbnailUrl || file.relativePath),
+              date: existingEntry.date,
+              relativePath: file.relativePath,
+            })));
           }
-
-          setViewMemoriesModalFiles(urls.map((url: { signedUrl: string }, index: number) => {
-            return {
-              name: data[index].name,
-              url: url.signedUrl,
-              date: existingEntry.date
-            };
-          }));
+        } catch (err) {
+          console.error('Error loading entry memories:', err);
+          setViewMemoriesModalFiles([]);
         }
       })();
 
@@ -583,35 +560,25 @@ const Home = () => {
       fileUploadComponent.current!.clear();
 
       (async () => {
-        const userID = await GetUserID();
+        try {
+          const userID = await GetUserID();
+          const targetFolder = `${piStorage.defaultFolder}/${userID}/${existingEntry.date}`;
+          const tree = await piStorage.getDirectoryTree(targetFolder);
 
-        const { data, error } = await supabase.storage
-          .from('Memories')
-          .list(`${userID}/${existingEntry.date}`);
-
-        if (error) {
-          console.error(`Error listing files: ${error.message}`);
-          throw error;
-        }
-
-        if (!data.length) setViewMemoriesModalFiles([]);
-        else {
-          const { data: urls, error: urls_error } = await supabase.storage
-            .from('Memories')
-            .createSignedUrls(data.map((file: any) => `${userID}/${existingEntry.date}/${file.name}`), 3600 * 24 * 7);
-
-          if (urls_error) {
-            console.error(`Error getting signed URLs: ${urls_error.message}`);
-            throw urls_error;
+          if (!tree.files || !tree.files.length) {
+            setViewMemoriesModalFiles([]);
+          } else {
+            setViewMemoriesModalFiles(tree.files.map((file) => ({
+              name: file.name,
+              url: piStorage.getFileUrl(file.viewUrl || file.relativePath),
+              thumbnail_url: piStorage.getThumbnailUrl(file.thumbnailUrl || file.relativePath),
+              date: existingEntry.date,
+              relativePath: file.relativePath,
+            })));
           }
-
-          setViewMemoriesModalFiles(urls.map((url: { signedUrl: string }, index: number) => {
-            return {
-              name: data[index].name,
-              url: url.signedUrl,
-              date: existingEntry.date
-            };
-          }));
+        } catch (err) {
+          console.error('Error loading entry memories:', err);
+          setViewMemoriesModalFiles([]);
         }
       })();
 
@@ -852,118 +819,92 @@ const Home = () => {
     setCustomTrackers(sort_custom_trackers(customTrackers.map((tracker: CustomTracker) => tracker.name === custom_tracker_name ? { ...tracker, icon_classname } : tracker)));
   };
 
-  const fileUploadHandler = (e: any) => {
+  const fileUploadHandler = async (e: any) => {
     try {
-      let errorToThrow;
-      e.files.forEach(async (file: any) => {
-        // Upload the file to the user's folder
-        // A subfolder is made for each date
-        const { error } = await supabase.storage
-          .from('Memories')
-          .upload(`${await GetUserID()}/${entryModal.current!.getAttribute('data-startstr')!}/${file.name}`, file);
-          
-        if (error) {
-          console.error(`Error uploading file: ${error.message}`);
-          if (error.message === 'The resource already exists')
-            alert(`A file with the name '${file.name}' already exists`);
-          else {
-            alert(`Error uploading file: ${error.message}`);
-            errorToThrow = error
-          }
-        }
+      const dateStr = entryModal.current!.getAttribute('data-startstr')!;
+      const userID = await GetUserID();
+      const targetFolder = `${piStorage.defaultFolder}/${userID}/${dateStr}`;
+      const filesToUpload: File[] = e.files;
 
-        
-        fileUploadComponent.current!.setFiles(fileUploadComponent.current!.getFiles().filter((f: any) => f !== file).sort((a: any, b: any) => a.size - b.size));
-        fileUploadComponent.current!.setUploadedFiles(fileUploadComponent.current!.getUploadedFiles().concat(file).sort((a: any, b: any) => a.size - b.size));
-      });
-      
-      setViewMemoriesModalFiles(viewMemoriesModalFiles.concat(e.files.map((file: any) => ({ name: file.name, url: URL.createObjectURL(file), date: entryModal.current!.getAttribute('data-startstr')! }))));
-      if (errorToThrow) throw errorToThrow;
+      const uploadRes = await piStorage.uploadFiles(targetFolder, filesToUpload);
+
+      const newlyUploaded = (uploadRes.files || []).map((file) => ({
+        name: file.original_filename || file.filename,
+        url: piStorage.getFileUrl(file.file_url || file.filename),
+        thumbnail_url: piStorage.getThumbnailUrl(file.thumbnail_url || file.filename),
+        date: dateStr,
+        relativePath: file.file_url,
+      }));
+
+      setViewMemoriesModalFiles((prev) => prev.concat(newlyUploaded));
+
+      if (uploadRes.failed && uploadRes.failed.length > 0) {
+        alert(`Some files could not be uploaded: ${uploadRes.failed.map((f) => f.error).join(', ')}`);
+      }
+
+      if (fileUploadComponent.current) {
+        fileUploadComponent.current.setUploadedFiles(
+          fileUploadComponent.current.getUploadedFiles().concat(filesToUpload)
+        );
+        fileUploadComponent.current.clear();
+      }
     } catch (error: any) {
       console.error(`Error uploading file: ${error.message}`);
+      alert(`Error uploading file: ${error.message || error}`);
     }
   };
 
-  // Remove a single file from the database's storage
+  // Remove a single file from PiStorage
   const removeFileFromMemoriesModal = async (date: string, fileName: string) => {
-    const userID = await GetUserID();
-    
-    const { error } = await supabase.storage
-      .from('Memories')
-      .remove([`${userID}/${date}/${fileName}`]);
-
-    if (error) {
+    try {
+      const userID = await GetUserID();
+      const targetPath = `${piStorage.defaultFolder}/${userID}/${date}/${fileName}`;
+      await piStorage.deleteFile(targetPath);
+      setViewMemoriesModalFiles((prev) => prev.filter((file) => file.name !== fileName));
+    } catch (error: any) {
       console.error(`Error removing file: ${error.message}`);
-      throw error;
+      alert(`Error removing file: ${error.message || error}`);
     }
-
-    setViewMemoriesModalFiles(viewMemoriesModalFiles.filter((file: { name: string }) => file.name !== fileName));
   };
 
   // Delete all memories for a specific date
   const deleteAllMemories = async (date: string) => {
-    const userID = await GetUserID();
-
-    // List all files
-    const { data, error: listError } = await supabase.storage
-    .from('Memories')
-    .list(`${userID}/${date}`, { limit: 10_000 });
-
-    if (listError) {
-      console.error(`Error listing files: ${listError.message}`);
-      throw listError;
+    try {
+      const userID = await GetUserID();
+      const targetFolder = `${piStorage.defaultFolder}/${userID}/${date}`;
+      await piStorage.deleteDirectory(targetFolder);
+      setViewMemoriesModalFiles([]);
+    } catch (error: any) {
+      console.error(`Error removing memories: ${error.message}`);
+      alert(`Error removing memories: ${error.message || error}`);
     }
-
-    if (!data.length) return;
-    const pathsToDelete = data.map((file) => `${userID}/${date}/${file.name}`);
-
-    // Remove all files
-    const { error } = await supabase.storage
-      .from('Memories')
-      .remove(pathsToDelete);
-
-    if (error) {
-      console.error(`Error removing file: ${error.message}`);
-      throw error;
-    }
-
-    setViewMemoriesModalFiles([]);
   };
 
   const setupViewMemoriesModal = async (date: string) => {
-    const userID = await GetUserID();
-    const dateString = `${months[parseInt(date.split('-')[1]) - 1]} ${date.split('-')[2]}, ${date.substring(0, 4)}`;
-    viewMemoriesModalDateDisplay.current!.textContent = dateString;
-
-    // Get all files
-    const { data, error } = await supabase.storage
-      .from('Memories')
-      .list(`${userID}/${date}`, { limit: 10_000 });
-
-    if (error) {
-      console.error(`Error listing files: ${error.message}`);
-      throw error;
-    }
-
-    if (!data.length) {
-      setViewMemoriesModalFiles([]);
-    } else {
-      const { data: urls, error: urls_error } = await supabase.storage
-        .from('Memories')
-        .createSignedUrls(data.map((file: any) => `${userID}/${date}/${file.name}`), 3600 * 24 * 7);
-
-      if (urls_error) {
-        console.error(`Error getting signed URLs: ${urls_error.message}`);
-        throw urls_error;
+    try {
+      const userID = await GetUserID();
+      const dateString = `${months[parseInt(date.split('-')[1]) - 1]} ${date.split('-')[2]}, ${date.substring(0, 4)}`;
+      if (viewMemoriesModalDateDisplay.current) {
+        viewMemoriesModalDateDisplay.current.textContent = dateString;
       }
 
-      setViewMemoriesModalFiles(urls.map((url: { signedUrl: string }, index: number) => {
-        return {
-          name: data[index].name,
-          url: url.signedUrl,
-          date
-        };
-      }));
+      const targetFolder = `${piStorage.defaultFolder}/${userID}/${date}`;
+      const tree = await piStorage.getDirectoryTree(targetFolder);
+
+      if (!tree.files || !tree.files.length) {
+        setViewMemoriesModalFiles([]);
+      } else {
+        setViewMemoriesModalFiles(tree.files.map((file) => ({
+          name: file.name,
+          url: piStorage.getFileUrl(file.viewUrl || file.relativePath),
+          thumbnail_url: piStorage.getThumbnailUrl(file.thumbnailUrl || file.relativePath),
+          date,
+          relativePath: file.relativePath,
+        })));
+      }
+    } catch (error: any) {
+      console.error(`Error listing memories: ${error.message}`);
+      setViewMemoriesModalFiles([]);
     }
   };
 
@@ -1340,9 +1281,21 @@ const Home = () => {
               { viewMemoriesModalFiles.length > 0 &&
                 <div className="image-grid" style={{ "gridTemplateColumns": `repeat(${viewMemoriesModalFiles.length > 3 ? 3 : viewMemoriesModalFiles.length}, 1fr)` }}>
                   {
-                    viewMemoriesModalFiles.map((file: { name: string, url: string, date: string }) => {
+                    viewMemoriesModalFiles.map((file) => {
                       return (
-                        <a href={ file.url } target="_blank"><img src={ file.url } alt={ file.name } className="img-thumbnail no-highlight" /></a>
+                        <a href={ file.url } target="_blank" rel="noreferrer" key={file.name}>
+                          <img
+                            src={ file.thumbnail_url || file.url }
+                            alt={ file.name }
+                            className="img-thumbnail no-highlight"
+                            loading="lazy"
+                            onError={(e) => {
+                              if (e.currentTarget.src !== file.url) {
+                                e.currentTarget.src = file.url;
+                              }
+                            }}
+                          />
+                        </a>
                       );
                     })
                   }
@@ -1366,12 +1319,24 @@ const Home = () => {
             <div className="modal-body" ref={ viewMemoriesModalBody }>
               { viewMemoriesModalFiles.length === 0 && <div className="text-center">No memories saved</div> }
               { viewMemoriesModalFiles.length > 0 &&
-                viewMemoriesModalFiles.map((file: { name: string, url: string, date: string }) => {
+                viewMemoriesModalFiles.map((file) => {
                   return (
-                    <div className="d-flex justify-content-between align-items-center mb-2">
+                    <div key={file.name} className="d-flex justify-content-between align-items-center mb-2">
                       <div className="d-flex align-items-center">
-                        <img src={ file.url } alt={ file.name } className="img-thumbnail no-highlight" />
-                        <a href={ file.url} target="_blank" className="text-decoration-none btn-primary">{ file.name }</a>
+                        <a href={ file.url } target="_blank" rel="noreferrer">
+                          <img
+                            src={ file.thumbnail_url || file.url }
+                            alt={ file.name }
+                            className="img-thumbnail no-highlight"
+                            style={{ width: '50px', height: '50px', objectFit: 'cover' }}
+                            onError={(e) => {
+                              if (e.currentTarget.src !== file.url) {
+                                e.currentTarget.src = file.url;
+                              }
+                            }}
+                          />
+                        </a>
+                        <a href={ file.url } target="_blank" rel="noreferrer" className="text-decoration-none btn-primary ms-2">{ file.name }</a>
                       </div>
                       <div className="d-flex align-items-center">
                         <button className="btn btn-floating btn-secondary btn-sm me-2 " type="button" style={{ color: "var(--mdb-primary)" }} onClick={ async () => fileDownload(await fetch(file.url).then(res => res.blob()), file.name) }>
