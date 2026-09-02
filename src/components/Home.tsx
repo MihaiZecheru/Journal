@@ -18,7 +18,7 @@ import { useNavigate } from 'react-router-dom';
 import fileDownload from 'js-file-download'
 import { UserID } from '../database/ID';
 import { createShareLink } from '../database/createShareLink';
-import { getPhotoDate } from '../utils/exifUtils';
+import { getPhotoDate, toLosAngelesDateString } from '../utils/exifUtils';
 import { piStorage } from '../lib/pistorage';
 import { getPendingSharedPhotos, clearSharedPhotos } from '../utils/sharedPhotosDb';
 
@@ -377,10 +377,20 @@ const Home = () => {
   }
 
   const handleDateSelect = (selectInfo: any) => {
-    const date = new Date(new Date(selectInfo.start).toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
+    const selectedDateStr = selectInfo.startStr as string;
+    const [selYear, selMonth, selDay] = selectedDateStr.split('-').map(Number);
+    const date = new Date(selYear, selMonth - 1, selDay);
     const weekday = weekdays[date.getDay()];
-    const month = date.toLocaleString('default', { month: 'long' });
-    const isMoreThanSixDaysAgo = (new Date().getTime() - date.getTime()) / (1000 * 60 * 60 * 24) > 7;
+    const month = months[selMonth - 1];
+
+    const todayStr = GetTodaysDate();
+    const todayParts = todayStr.split('-').map(Number);
+    const todayDate = new Date(todayParts[0], todayParts[1] - 1, todayParts[2]);
+    const isMoreThanSixDaysAgo = (todayDate.getTime() - date.getTime()) / (1000 * 60 * 60 * 24) > 7;
+
+    const yesterdayDate = new Date(todayDate);
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const yesterdayStr = toLosAngelesDateString(yesterdayDate);
 
     // Activate custom tracker inputs and clear input
     document.querySelectorAll('.custom-tracker-input').forEach((input: Element) => {
@@ -402,20 +412,25 @@ const Home = () => {
     entryModalTextArea.current!.value = '';
 
     // Set modal title
-    entryModalTitle.current!.textContent = `${weekday}, ${month} ${date.getDate()}`;
-    entryModalLabel.current!.textContent = date.getDate() === new Date().getDate() ? 'What happened today?' : (date.getDate() === new Date().getDate() - 1) ? `What happened yesterday?` : `What happened on ${weekday}?`;
-    entryModal.current!.setAttribute('data-startstr', selectInfo.startStr);
+    entryModalTitle.current!.textContent = `${weekday}, ${month} ${selDay}`;
+    entryModalLabel.current!.textContent =
+      selectedDateStr === todayStr
+        ? 'What happened today?'
+        : selectedDateStr === yesterdayStr
+        ? 'What happened yesterday?'
+        : `What happened on ${weekday}?`;
+    entryModal.current!.setAttribute('data-startstr', selectedDateStr);
 
     // Hide delete button
     (entryModal.current!.querySelector('.btn-danger') as HTMLButtonElement).classList.add('visually-hidden');
 
     // Check if an entry already exists for the selected date
-    const existingEntry: Entry | null = entries.current.find((entry: Entry) => entry.date === date.toISOString().split('T')[0]) || null;
+    const existingEntry: Entry | null = entries.current.find((entry: Entry) => entry.date === selectedDateStr) || null;
 
     // Show view modal
     if (isMoreThanSixDaysAgo && editMode === false) {
-      if (!existingEntry) return alert(`No entry exists for ${weekday}, ${month} ${date.getDate()}`);
-      viewEntryModalTitle.current!.textContent = `${weekday}, ${month} ${date.getDate()}`;
+      if (!existingEntry) return alert(`No entry exists for ${weekday}, ${month} ${selDay}`);
+      viewEntryModalTitle.current!.textContent = `${weekday}, ${month} ${selDay}`;
       viewEntryModalRatingDisplay.current!.textContent = existingEntry.rating === 11 ? 'x' : existingEntry.rating.toString();
       viewEntryModalStarredDisplay.current!.innerHTML = existingEntry.starred ? '<i class="fas fa-star fa-lg view-entry-modal-display-star"></i>' : '<i class="far fa-star fa-lg view-entry-modal-display-star"></i>';
       document.querySelector('.view-entry-modal-display-star')?.addEventListener('click', async (e: any) => {

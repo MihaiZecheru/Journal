@@ -4,7 +4,7 @@ import { Modal } from 'mdb-ui-kit';
 import supabase from '../database/config/supabase';
 import { GetUserID } from '../database/GetUser';
 import fileDownload from 'js-file-download';
-import { getPhotoDate, formatDateOrdinal } from '../utils/exifUtils';
+import { getPhotoDate, formatDateOrdinal, toLosAngelesDateString } from '../utils/exifUtils';
 import { piStorage, PISTORAGE_CONSTRAINTS } from '../lib/pistorage';
 import { createBebShortUrl } from '../lib/beb';
 import Entry from '../database/Entry';
@@ -16,6 +16,13 @@ interface MemoryPhoto {
   thumbnail_url: string; // Fast WebP thumbnail URL
   date: string;
   relativePath?: string;
+}
+
+interface BatchUploadItem {
+  file: File;
+  date: string;
+  previewUrl: string;
+  sizeFormatted: string;
 }
 
 interface FailedUploadItem {
@@ -128,12 +135,16 @@ const Memories: React.FC = () => {
   const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null);
   const [selectedEntryDateTitle, setSelectedEntryDateTitle] = useState<string>('');
 
+  // Existing entry dates in Supabase for displayed photos
+  const [existingEntryDates, setExistingEntryDates] = useState<Set<string>>(new Set());
+
   // Date Picker Modal Ref
   const datePickerModalRef = useRef<HTMLDivElement>(null);
 
   // Bulk Upload Modal State
   const uploadModalRef = useRef<HTMLDivElement>(null);
-  const [batchFiles, setBatchFiles] = useState<{ file: File; date: string; previewUrl: string }[]>([]);
+  const [batchFiles, setBatchFiles] = useState<BatchUploadItem[]>([]);
+  const [bulkDate, setBulkDate] = useState<string>(() => toLosAngelesDateString(new Date()));
   const [failedUploads, setFailedUploads] = useState<FailedUploadItem[]>([]);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadStatus, setUploadStatus] = useState<string>('');
@@ -409,6 +420,23 @@ const Memories: React.FC = () => {
 
       setPhotos(allPhotos);
       sessionStorage.setItem(cacheKey, JSON.stringify({ photos: allPhotos, timestamp: Date.now() }));
+
+      // Check which photo dates have written entries in Supabase
+      const photoDates = Array.from(new Set(allPhotos.map((p) => p.date)));
+      if (photoDates.length > 0) {
+        const { data: entriesData } = await supabase
+          .from('Entries')
+          .select('date')
+          .eq('user_id', userID)
+          .in('date', photoDates);
+        if (isMounted.current && fetchId === currentFetchId.current) {
+          setExistingEntryDates(new Set((entriesData || []).map((e: any) => e.date)));
+        }
+      } else {
+        if (isMounted.current && fetchId === currentFetchId.current) {
+          setExistingEntryDates(new Set());
+        }
+      }
     } catch (err) {
       console.error('Error fetching photos:', err);
       if (isMounted.current && fetchId === currentFetchId.current && !sessionStorage.getItem(cacheKey)) {
@@ -721,55 +749,46 @@ const Memories: React.FC = () => {
   const handleBatchFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const filesArr = Array.from(e.target.files);
-    const parsedList: { file: File; date: string; previewUrl: string }[] = [];
+    const parsedList: BatchUploadItem[] = [];
 
     for (const file of filesArr) {
       const date = await getPhotoDate(file);
       const previewUrl = URL.createObjectURL(file);
-      parsedList.push({ file, date, previewUrl });
+      const sizeMB = file.size / (1024 * 1024);
+      const sizeFormatted = sizeMB < 1 ? `${Math.round(file.size / 1024)} KB` : `${sizeMB.toFixed(1)} MB`;
+      parsedList.push({ file, date, previewUrl, sizeFormatted });
     }
 
     setBatchFiles((prev) => [...prev, ...parsedList]);
     e.target.value = '';
   };
 
-  // Process Bulk Upload
+  // Update date for a single item in the batch upload preview
+  const handleUpdateBatchFileDate = (index: number, newDate: string) => {
+    setBatchFiles((prev) =>
+      prev.map((item, i) => (i === index ? { ...item, date: newDate } : item))
+    );
+  };
+
+  // Batch apply a date to all selected items
+  const handleApplyBulkDate = () => {
+    if (!bulkDate) return;
+    setBatchFiles((prev) => prev.map((item) => ({ ...item, date: bulkDate })));
+  };
+
+  // Process Bulk Upload (Indiscriminate - saves for any date without requiring an entry)
   const processBatchUpload = async () => {
     if (batchFiles.length === 0) return;
     setIsUploading(true);
-    setUploadStatus('Checking journal entries for photo dates...');
+    setUploadStatus('Preparing memories for upload...');
 
     try {
       const userID = await GetUserID();
-      const uniqueDates = Array.from(new Set(batchFiles.map((b) => b.date)));
-
-      const { data: existingEntries, error: entryErr } = await supabase
-        .from('Entries')
-        .select('date')
-        .eq('user_id', userID)
-        .in('date', uniqueDates);
-
-      if (entryErr) {
-        alert('Could not verify journal entries. Please try again.');
-        setIsUploading(false);
-        return;
-      }
-
-      const validDatesSet = new Set((existingEntries || []).map((e: any) => e.date));
-
       const filesToUpload: { file: File; date: string }[] = [];
       const newFailedUploads: FailedUploadItem[] = [];
 
       batchFiles.forEach((item) => {
-        if (!validDatesSet.has(item.date)) {
-          newFailedUploads.push({
-            id: Math.random().toString(36).substring(2, 9),
-            file: item.file,
-            date: item.date,
-            formattedDate: formatDateOrdinal(item.date),
-            reason: 'No journal entry exists for this day',
-          });
-        } else if (item.file.size > PISTORAGE_CONSTRAINTS.MAX_IMAGE_SIZE_BYTES) {
+        if (item.file.size > PISTORAGE_CONSTRAINTS.MAX_IMAGE_SIZE_BYTES) {
           const sizeMB = (item.file.size / (1024 * 1024)).toFixed(1);
           newFailedUploads.push({
             id: Math.random().toString(36).substring(2, 9),
@@ -859,20 +878,6 @@ const Memories: React.FC = () => {
   const handleRetryUpload = async (failedItem: FailedUploadItem) => {
     try {
       const userID = await GetUserID();
-
-      const { data: entryData, error: entryErr } = await supabase
-        .from('Entries')
-        .select('date')
-        .eq('user_id', userID)
-        .eq('date', failedItem.date)
-        .maybeSingle();
-
-      if (entryErr || !entryData) {
-        alert(
-          `Still no journal entry found for ${failedItem.formattedDate}. Please write an entry for this day first before retrying!`
-        );
-        return;
-      }
 
       if (failedItem.file.size > PISTORAGE_CONSTRAINTS.MAX_IMAGE_SIZE_BYTES) {
         const sizeMB = (failedItem.file.size / (1024 * 1024)).toFixed(1);
@@ -1040,13 +1045,23 @@ const Memories: React.FC = () => {
           onClick={(e) => e.stopPropagation()}
         >
           <ul>
-            <li onClick={() => {
-              const date = contextMenu.photo!.date;
-              setContextMenu({ visible: false, x: 0, y: 0, photo: null });
-              handleViewJournalEntry(date);
-            }}>
-              <i className="fas fa-book-open"></i>View written entry
-            </li>
+            {existingEntryDates.has(contextMenu.photo.date) ? (
+              <li onClick={() => {
+                const date = contextMenu.photo!.date;
+                setContextMenu({ visible: false, x: 0, y: 0, photo: null });
+                handleViewJournalEntry(date);
+              }}>
+                <i className="fas fa-book-open"></i>View written entry
+              </li>
+            ) : (
+              <li
+                className="disabled-option"
+                title="No written entry exists for this date"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <i className="fas fa-book-open"></i>No written entry exists
+              </li>
+            )}
             <li onClick={() => {
               const url = contextMenu.photo!.url;
               setContextMenu({ visible: false, x: 0, y: 0, photo: null });
@@ -1246,7 +1261,7 @@ const Memories: React.FC = () => {
             </div>
             <div className="modal-body">
               <p className="text-light opacity-75 small mb-3">
-                Select or drop photos below. Photos will be read for EXIF dates and added to that day's Memories section. Note: Photos require an existing journal entry for that date.
+                Select or drop photos below. Photos will be organized by date (America/Los Angeles time) and saved to Memories.
               </p>
 
               {/* High-Contrast Dropzone */}
@@ -1270,36 +1285,87 @@ const Memories: React.FC = () => {
 
               {/* Batch Files Preview */}
               {batchFiles.length > 0 && (
-                <div className="mb-3">
-                  <h6 className="text-light">Selected Photos ({batchFiles.length}):</h6>
-                  <div
-                    className="d-flex flex-wrap gap-2 p-2 border rounded bg-dark"
-                    style={{ maxHeight: '200px', overflowY: 'auto' }}
-                  >
-                    {batchFiles.map((item, idx) => (
-                      <div
-                        key={idx}
-                        className="position-relative border rounded p-1 bg-secondary"
-                        style={{ width: '100px' }}
+                <div className="upload-preview-container">
+                  <div className="upload-preview-header">
+                    <h6>
+                      <i className="fas fa-images me-2 text-primary"></i>Selected Photos ({batchFiles.length})
+                    </h6>
+                    <button
+                      type="button"
+                      className="btn btn-outline-danger btn-sm py-1 px-2"
+                      onClick={() => setBatchFiles([])}
+                      disabled={isUploading}
+                    >
+                      <i className="fas fa-trash-can me-1"></i>Clear All
+                    </button>
+                  </div>
+
+                  {/* Batch Date Quick Setter */}
+                  <div className="upload-batch-toolbar">
+                    <div className="upload-batch-toolbar-label">
+                      <i className="far fa-calendar-check text-primary"></i>
+                      <span>Set date for all photos:</span>
+                    </div>
+                    <div className="upload-batch-toolbar-actions">
+                      <input
+                        type="date"
+                        className="upload-batch-date-input"
+                        value={bulkDate}
+                        onChange={(e) => setBulkDate(e.target.value)}
+                        disabled={isUploading}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm py-1 px-2"
+                        onClick={handleApplyBulkDate}
+                        disabled={!bulkDate || isUploading}
                       >
-                        <img
-                          src={item.previewUrl}
-                          alt="preview"
-                          className="w-100 rounded"
-                          style={{ height: '70px', objectFit: 'cover' }}
-                        />
-                        <div
-                          className="small text-truncate text-center mt-1 fw-bold text-white"
-                          title={formatDateOrdinal(item.date)}
-                        >
-                          {item.date}
+                        Apply
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Cards Grid */}
+                  <div className="upload-preview-grid">
+                    {batchFiles.map((item, idx) => (
+                      <div key={idx} className="upload-preview-card">
+                        <div className="upload-card-thumb-container">
+                          <img
+                            src={item.previewUrl}
+                            alt={item.file.name}
+                            className="upload-card-thumb"
+                          />
+                          <button
+                            type="button"
+                            className="upload-card-remove-btn"
+                            title="Remove photo"
+                            onClick={() => setBatchFiles(batchFiles.filter((_, i) => i !== idx))}
+                            disabled={isUploading}
+                          >
+                            <i className="fas fa-xmark"></i>
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          className="btn-close position-absolute top-0 end-0 bg-white rounded-circle p-1"
-                          aria-label="Remove"
-                          onClick={() => setBatchFiles(batchFiles.filter((_, i) => i !== idx))}
-                        ></button>
+                        <div className="upload-card-body">
+                          <div className="upload-card-filename" title={item.file.name}>
+                            {item.file.name}
+                          </div>
+                          <div className="upload-card-meta">
+                            <span className="upload-card-size-badge">{item.sizeFormatted}</span>
+                            <span className="text-light opacity-75">{formatDateOrdinal(item.date)}</span>
+                          </div>
+                          <div className="upload-card-date-field">
+                            <label className="upload-card-date-label">
+                              <i className="far fa-calendar-alt text-primary"></i>Date (LA):
+                            </label>
+                            <input
+                              type="date"
+                              className="upload-card-date-input"
+                              value={item.date}
+                              onChange={(e) => handleUpdateBatchFileDate(idx, e.target.value)}
+                              disabled={isUploading}
+                            />
+                          </div>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1318,10 +1384,10 @@ const Memories: React.FC = () => {
               {failedUploads.length > 0 && (
                 <div className="failed-uploads-container">
                   <h6 className="text-danger fw-bold mb-2">
-                    <i className="fas fa-circle-exclamation me-2"></i>Failed Uploads (No entry exists for this day)
+                    <i className="fas fa-circle-exclamation me-2"></i>Failed Uploads
                   </h6>
                   <p className="small text-light opacity-75 mb-2">
-                    The following photos were not uploaded because no journal entry was written for that day. Write an entry for the date and click <b>Retry</b>.
+                    The following photos could not be uploaded (e.g. file size exceeds limit or server rejected file). Click <b>Retry</b> to try again.
                   </p>
                   <div>
                     {failedUploads.map((failedItem) => (
@@ -1329,6 +1395,7 @@ const Memories: React.FC = () => {
                         <div>
                           <span className="fw-bold text-white">{failedItem.formattedDate}</span>
                           <span className="text-light opacity-75 ms-2 small">({failedItem.file.name})</span>
+                          <div className="text-danger small mt-1">{failedItem.reason}</div>
                         </div>
                         <div>
                           <button
@@ -1447,18 +1514,30 @@ const Memories: React.FC = () => {
                 </div>
 
                 <div className="content-modal-actions-list">
-                  <button
-                    type="button"
-                    className="content-modal-action-item"
-                    onClick={() => {
-                      const date = photos[viewingPhotoIndex].date;
-                      handleCloseContentModal();
-                      handleViewJournalEntry(date);
-                    }}
-                  >
-                    <i className="fas fa-book-open"></i>
-                    <span>View written entry</span>
-                  </button>
+                  {existingEntryDates.has(photos[viewingPhotoIndex].date) ? (
+                    <button
+                      type="button"
+                      className="content-modal-action-item"
+                      onClick={() => {
+                        const date = photos[viewingPhotoIndex].date;
+                        handleCloseContentModal();
+                        handleViewJournalEntry(date);
+                      }}
+                    >
+                      <i className="fas fa-book-open"></i>
+                      <span>View written entry</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="content-modal-action-item disabled"
+                      disabled
+                      title="No written entry exists for this date"
+                    >
+                      <i className="fas fa-book-open"></i>
+                      <span>No written entry exists</span>
+                    </button>
+                  )}
 
                   <button
                     type="button"
