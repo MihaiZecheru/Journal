@@ -104,10 +104,12 @@ export type UploadFileInput =
 
 export const PISTORAGE_CONSTRAINTS = {
   MAX_BULK_UPLOAD_AMOUNT: 5,
-  MAX_IMAGE_SIZE_BYTES: 2 * 1024 * 1024, // 2MB
-  MAX_VIDEO_SIZE_BYTES: 20 * 1024 * 1024, // 20MB
-  MAX_IMAGE_SIZE_MB: 2,
-  MAX_VIDEO_SIZE_MB: 20,
+  MAX_FILE_SIZE_BYTES: 1.5 * 1024 * 1024 * 1024, // 1.5GB
+  MAX_FILE_SIZE_GB: 1.5,
+  MAX_IMAGE_SIZE_BYTES: 1.5 * 1024 * 1024 * 1024, // 1.5GB
+  MAX_VIDEO_SIZE_BYTES: 1.5 * 1024 * 1024 * 1024, // 1.5GB
+  MAX_IMAGE_SIZE_MB: 1536,
+  MAX_VIDEO_SIZE_MB: 1536,
   UPLOAD_RATE_LIMIT_PER_15_MIN: 500,
   GLOBAL_RATE_LIMIT_PER_15_MIN: 1000,
   AUTH_RATE_LIMIT_PER_15_MIN: 30,
@@ -227,7 +229,7 @@ export class PiStorageClient {
   /**
    * Uploads one or more files into a target PiStorage folder.
    * Enforces server constraints:
-   *  - Pre-validates file sizes against MAX_IMAGE_SIZE_MB (2MB) and MAX_VIDEO_SIZE_MB (20MB)
+   *  - Pre-validates file sizes against MAX_FILE_SIZE_BYTES (1.5GB)
    *  - Automatically chunks files into batches of MAX_BULK_UPLOAD_AMOUNT (5)
    *  - Handles rate limits (HTTP 429) with automatic backoff and retry
    *  - Throttles between chunk uploads to respect rate limits
@@ -253,22 +255,17 @@ export class PiStorageClient {
     const allFailed: UploadFailedItem[] = [];
     const allUploaded: UploadedMediaItem[] = [];
 
-    // 1. Client-Side Pre-validation for File Size Limits
+    // 1. Client-Side Pre-validation for File Size Limits (Up to 1.5GB)
+    const maxLimitBytes = PISTORAGE_CONSTRAINTS.MAX_FILE_SIZE_BYTES;
     for (const item of files) {
       const info = this.extractFileInfo(item);
-      const limitBytes = info.isVideo
-        ? PISTORAGE_CONSTRAINTS.MAX_VIDEO_SIZE_BYTES
-        : PISTORAGE_CONSTRAINTS.MAX_IMAGE_SIZE_BYTES;
-      const limitMB = info.isVideo
-        ? PISTORAGE_CONSTRAINTS.MAX_VIDEO_SIZE_MB
-        : PISTORAGE_CONSTRAINTS.MAX_IMAGE_SIZE_MB;
 
-      if (info.size > limitBytes) {
-        const sizeMB = (info.size / (1024 * 1024)).toFixed(2);
+      if (info.size > maxLimitBytes) {
+        const sizeGB = (info.size / (1024 * 1024 * 1024)).toFixed(2);
         allFailed.push({
           original_name: info.name,
           original_filename: info.name,
-          error: `File exceeds maximum allowed ${info.isVideo ? 'video' : 'image'} size of ${limitMB} MB (${sizeMB} MB).`,
+          error: `File exceeds maximum allowed size of 1.5 GB (${sizeGB} GB).`,
         });
       } else {
         validFiles.push(item);

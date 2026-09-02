@@ -7,6 +7,7 @@ import fileDownload from 'js-file-download';
 import { getPhotoDate, formatDateOrdinal, toLosAngelesDateString } from '../utils/exifUtils';
 import { piStorage, PISTORAGE_CONSTRAINTS } from '../lib/pistorage';
 import { createBebShortUrl } from '../lib/beb';
+import ShortUrlModal from './ShortUrlModal';
 import Entry from '../database/Entry';
 import '../styles/memories.css';
 
@@ -148,6 +149,7 @@ const Memories: React.FC = () => {
   const [failedUploads, setFailedUploads] = useState<FailedUploadItem[]>([]);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadStatus, setUploadStatus] = useState<string>('');
+  const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
 
   // Content Viewing Modal (Lightbox) State
   const [viewingPhotoIndex, setViewingPhotoIndex] = useState<number | null>(null);
@@ -157,10 +159,6 @@ const Memories: React.FC = () => {
   const [isGeneratingShortUrl, setIsGeneratingShortUrl] = useState<boolean>(false);
   const [shortUrlData, setShortUrlData] = useState<{ shortUrl: string | null; destinationUrl: string } | null>(null);
   const [shortUrlError, setShortUrlError] = useState<string | null>(null);
-  const [copiedTooltip, setCopiedTooltip] = useState<boolean>(false);
-  const [copiedLongTooltip, setCopiedLongTooltip] = useState<boolean>(false);
-  const tooltipTimeoutRef = useRef<any>(null);
-  const longTooltipTimeoutRef = useRef<any>(null);
 
   // Modal Action Tooltip & Loading States
   const [modalTooltip, setModalTooltip] = useState<'copyImage' | 'copyUrl' | null>(null);
@@ -180,8 +178,6 @@ const Memories: React.FC = () => {
 
   useEffect(() => {
     return () => {
-      if (tooltipTimeoutRef.current) clearTimeout(tooltipTimeoutRef.current);
-      if (longTooltipTimeoutRef.current) clearTimeout(longTooltipTimeoutRef.current);
       if (modalTooltipTimeoutRef.current) clearTimeout(modalTooltipTimeoutRef.current);
     };
   }, []);
@@ -213,6 +209,33 @@ const Memories: React.FC = () => {
   const isVideoFile = (filename: string) => {
     return /\.(mp4|mov|webm|avi|mkv)$/i.test(filename);
   };
+
+  // Preload adjacent 2 medias in either direction (4 total) for instant navigation
+  useEffect(() => {
+    if (viewingPhotoIndex === null || photos.length === 0) return;
+
+    const offsets = [-2, -1, 1, 2];
+    offsets.forEach((offset) => {
+      const idx = viewingPhotoIndex + offset;
+      if (idx >= 0 && idx < photos.length) {
+        const media = photos[idx];
+        if (!media || !media.url) return;
+
+        if (isVideoFile(media.name)) {
+          const video = document.createElement('video');
+          video.preload = 'auto';
+          video.muted = true;
+          video.src = media.url;
+        } else {
+          const img = new Image();
+          img.src = media.url;
+          if (typeof img.decode === 'function') {
+            img.decode().catch(() => {});
+          }
+        }
+      }
+    });
+  }, [viewingPhotoIndex, photos]);
 
   const handlePrevPhoto = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -610,8 +633,6 @@ const Memories: React.FC = () => {
     setContextMenu({ visible: false, x: 0, y: 0, photo: null });
     setShortUrlModalOpen(true);
     setShortUrlError(null);
-    setCopiedTooltip(false);
-    setCopiedLongTooltip(false);
 
     if (shortUrlCache.current[photo.url]) {
       const cached = shortUrlCache.current[photo.url];
@@ -660,34 +681,6 @@ const Memories: React.FC = () => {
       } catch (cErr) {
         console.warn('Clipboard write error:', cErr);
       }
-    }
-  };
-
-  const handleCopyShortUrl = async () => {
-    if (!shortUrlData?.shortUrl) return;
-    try {
-      await navigator.clipboard.writeText(shortUrlData.shortUrl);
-      setCopiedTooltip(true);
-      if (tooltipTimeoutRef.current) clearTimeout(tooltipTimeoutRef.current);
-      tooltipTimeoutRef.current = setTimeout(() => {
-        setCopiedTooltip(false);
-      }, 2000);
-    } catch (err) {
-      console.error('Copy short URL failed:', err);
-    }
-  };
-
-  const handleCopyLongUrl = async () => {
-    if (!shortUrlData?.destinationUrl) return;
-    try {
-      await navigator.clipboard.writeText(shortUrlData.destinationUrl);
-      setCopiedLongTooltip(true);
-      if (longTooltipTimeoutRef.current) clearTimeout(longTooltipTimeoutRef.current);
-      longTooltipTimeoutRef.current = setTimeout(() => {
-        setCopiedLongTooltip(false);
-      }, 2000);
-    } catch (err) {
-      console.error('Copy long URL failed:', err);
     }
   };
 
@@ -745,13 +738,12 @@ const Memories: React.FC = () => {
     }
   };
 
-  // Bulk Upload File Selection
-  const handleBatchFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    const filesArr = Array.from(e.target.files);
+  // Helper to parse and queue selected/dropped files
+  const processSelectedFiles = async (files: File[]) => {
+    if (!files || files.length === 0) return;
     const parsedList: BatchUploadItem[] = [];
 
-    for (const file of filesArr) {
+    for (const file of files) {
       const date = await getPhotoDate(file);
       const previewUrl = URL.createObjectURL(file);
       const sizeMB = file.size / (1024 * 1024);
@@ -760,7 +752,52 @@ const Memories: React.FC = () => {
     }
 
     setBatchFiles((prev) => [...prev, ...parsedList]);
+  };
+
+  // Bulk Upload File Selection via input
+  const handleBatchFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    await processSelectedFiles(Array.from(e.target.files));
     e.target.value = '';
+  };
+
+  // Drag and drop event handlers
+  const handleDropzoneDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+    if (!isDraggingOver) setIsDraggingOver(true);
+  };
+
+  const handleDropzoneDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(true);
+  };
+
+  const handleDropzoneDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setIsDraggingOver(false);
+  };
+
+  const handleDropzoneDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const droppedFiles = Array.from(e.dataTransfer.files).filter(
+        (f) =>
+          f.type.startsWith('image/') ||
+          f.type.startsWith('video/') ||
+          /\.(jpe?g|png|gif|webp|heic|heif|mp4|mov|webm|avi|mkv)$/i.test(f.name)
+      );
+      if (droppedFiles.length > 0) {
+        await processSelectedFiles(droppedFiles);
+      }
+    }
   };
 
   // Update date for a single item in the batch upload preview
@@ -788,14 +825,14 @@ const Memories: React.FC = () => {
       const newFailedUploads: FailedUploadItem[] = [];
 
       batchFiles.forEach((item) => {
-        if (item.file.size > PISTORAGE_CONSTRAINTS.MAX_IMAGE_SIZE_BYTES) {
-          const sizeMB = (item.file.size / (1024 * 1024)).toFixed(1);
+        if (item.file.size > PISTORAGE_CONSTRAINTS.MAX_FILE_SIZE_BYTES) {
+          const sizeGB = (item.file.size / (1024 * 1024 * 1024)).toFixed(2);
           newFailedUploads.push({
             id: Math.random().toString(36).substring(2, 9),
             file: item.file,
             date: item.date,
             formattedDate: formatDateOrdinal(item.date),
-            reason: `Image is ${sizeMB} MB (exceeds ${PISTORAGE_CONSTRAINTS.MAX_IMAGE_SIZE_MB} MB limit). Please compress first.`,
+            reason: `File is ${sizeGB} GB (exceeds 1.5 GB limit).`,
           });
         } else {
           filesToUpload.push({ file: item.file, date: item.date });
@@ -879,9 +916,9 @@ const Memories: React.FC = () => {
     try {
       const userID = await GetUserID();
 
-      if (failedItem.file.size > PISTORAGE_CONSTRAINTS.MAX_IMAGE_SIZE_BYTES) {
-        const sizeMB = (failedItem.file.size / (1024 * 1024)).toFixed(1);
-        alert(`This image (${sizeMB} MB) exceeds the ${PISTORAGE_CONSTRAINTS.MAX_IMAGE_SIZE_MB} MB limit. Please compress it before retrying.`);
+      if (failedItem.file.size > PISTORAGE_CONSTRAINTS.MAX_FILE_SIZE_BYTES) {
+        const sizeGB = (failedItem.file.size / (1024 * 1024 * 1024)).toFixed(2);
+        alert(`This file (${sizeGB} GB) exceeds the 1.5 GB limit.`);
         return;
       }
 
@@ -1259,25 +1296,36 @@ const Memories: React.FC = () => {
                 aria-label="Close"
               ></button>
             </div>
-            <div className="modal-body">
+            <div
+              className="modal-body"
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onDrop={handleDropzoneDrop}
+            >
               <p className="text-light opacity-75 small mb-3">
                 Select or drop photos below. Photos will be organized by date (America/Los Angeles time) and saved to Memories.
               </p>
 
               {/* High-Contrast Dropzone */}
               <div
-                className="upload-memories-dropzone p-4 text-center border mb-3"
+                className={`upload-memories-dropzone p-4 text-center border mb-3 ${isDraggingOver ? 'dragging' : ''}`}
                 style={{ cursor: 'pointer' }}
                 onClick={() => document.getElementById('memories-file-input')?.click()}
+                onDragOver={handleDropzoneDragOver}
+                onDragEnter={handleDropzoneDragEnter}
+                onDragLeave={handleDropzoneDragLeave}
+                onDrop={handleDropzoneDrop}
               >
                 <i className="fas fa-images fa-3x"></i>
                 <h5>Click or drag & drop photos here</h5>
-                <span className="dropzone-subtitle">Supports JPEG, PNG, HEIC, WebP (max 2 MB per image, uploaded in batches of 5)</span>
+                <span className="dropzone-subtitle">Supports photos and videos up to 1.5 GB (server compresses automatically)</span>
                 <input
                   type="file"
                   id="memories-file-input"
                   multiple
-                  accept="image/*"
+                  accept="image/*,video/*"
                   className="d-none"
                   onChange={handleBatchFileSelect}
                 />
@@ -1494,6 +1542,36 @@ const Memories: React.FC = () => {
               >
                 <i className="fas fa-chevron-right"></i>
               </button>
+
+              {/* Hidden DOM preloader for 2 medias in either direction (4 total) */}
+              <div style={{ display: 'none' }} aria-hidden="true">
+                {[-2, -1, 1, 2].map((offset) => {
+                  const targetIdx = viewingPhotoIndex + offset;
+                  if (targetIdx < 0 || targetIdx >= photos.length) return null;
+                  const media = photos[targetIdx];
+                  if (!media || !media.url) return null;
+
+                  if (isVideoFile(media.name)) {
+                    return (
+                      <video
+                        key={`preload-video-${media.url}`}
+                        src={media.url}
+                        preload="auto"
+                        muted
+                        playsInline
+                      />
+                    );
+                  }
+                  return (
+                    <img
+                      key={`preload-img-${media.url}`}
+                      src={media.url}
+                      alt=""
+                      loading="eager"
+                    />
+                  );
+                })}
+              </div>
             </div>
 
             {/* Right Sidebar Section */}
@@ -1612,127 +1690,19 @@ const Memories: React.FC = () => {
       )}
 
       {/* Copy Short URL Modal */}
-      {shortUrlModalOpen && (
-        <div
-          className="short-url-modal-backdrop"
-          onClick={() => setShortUrlModalOpen(false)}
-        >
-          <div
-            className="short-url-card"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {isGeneratingShortUrl ? (
-              <div className="short-url-loading-container">
-                <div className="short-url-spinner"></div>
-                <div className="short-url-loading-text">Generating short URL...</div>
-                <div className="short-url-loading-subtext">Connecting to beb.mzecheru.com</div>
-              </div>
-            ) : shortUrlData && (
-              <>
-                {/* Header: Success or Service Failure Notice */}
-                {shortUrlError ? (
-                  <div className="short-url-header">
-                    <div className="short-url-warn-circle">
-                      <div className="short-url-warn-inner">
-                        <i className="fas fa-triangle-exclamation"></i>
-                      </div>
-                    </div>
-                    <div>
-                      <h4 className="short-url-title">Short URL Service Failed</h4>
-                      <p className="short-url-subtitle text-warning">
-                        Short URL generation failed. Full image URL copied to clipboard:
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="short-url-header">
-                    <div className="short-url-check-circle">
-                      <div className="short-url-check-inner">
-                        <i className="fas fa-check"></i>
-                      </div>
-                    </div>
-                    <div>
-                      <h4 className="short-url-title">Share Link Ready</h4>
-                      <p className="short-url-subtitle">
-                        7-day short link generated &amp; copied to clipboard:
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Primary Box: Short URL (only shown when short URL was successfully generated) */}
-                {shortUrlData.shortUrl && (
-                  <div className="short-url-box primary-link-box">
-                    <div className="short-url-link-group">
-                      <i className="fas fa-link link-icon primary-link-icon"></i>
-                      <span className="short-url-text">{shortUrlData.shortUrl}</span>
-                    </div>
-                    <div className="copy-btn-wrapper">
-                      {copiedTooltip && (
-                        <span className="copied-tooltip">
-                          Copied!
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        className="short-url-copy-btn"
-                        onClick={handleCopyShortUrl}
-                        title="Copy short link"
-                      >
-                        <i className="far fa-copy"></i>
-                        <span>Copy</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Secondary Box: Destination Signed URL with Copy button */}
-                <div className="destination-header-row">
-                  <span className="destination-label">
-                    {shortUrlData.shortUrl ? 'DESTINATION SIGNED URL' : 'FULL IMAGE URL'}
-                  </span>
-                  <span className="destination-status">Expires in 1 week</span>
-                </div>
-                <div className={`short-url-box destination-box${!shortUrlData.shortUrl ? ' standalone-destination-box' : ''}`}>
-                  <div className="short-url-link-group">
-                    <i className="fas fa-link link-icon destination-link-icon"></i>
-                    <span className="destination-url-text" title={shortUrlData.destinationUrl}>
-                      {shortUrlData.destinationUrl}
-                    </span>
-                  </div>
-                  <div className="copy-btn-wrapper">
-                    {copiedLongTooltip && (
-                      <span className="copied-tooltip">
-                        Copied!
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      className="short-url-copy-btn"
-                      onClick={handleCopyLongUrl}
-                      title="Copy full URL"
-                    >
-                      <i className="far fa-copy"></i>
-                      <span>Copy</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Bottom Got It Button */}
-                <div className="short-url-footer">
-                  <button
-                    type="button"
-                    className="short-url-got-it-btn"
-                    onClick={() => setShortUrlModalOpen(false)}
-                  >
-                    Got it
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+      <ShortUrlModal
+        isOpen={shortUrlModalOpen}
+        isLoading={isGeneratingShortUrl}
+        shortUrl={shortUrlData?.shortUrl ?? null}
+        destinationUrl={shortUrlData?.destinationUrl ?? null}
+        error={shortUrlError}
+        onClose={() => setShortUrlModalOpen(false)}
+        successSubtitle="7-day short link generated & copied to clipboard:"
+        errorSubtitle="Short URL generation failed. Full image URL copied to clipboard:"
+        destinationLabel="DESTINATION SIGNED URL"
+        destinationFallbackLabel="FULL IMAGE URL"
+        destinationExpiryText="Expires in 1 week"
+      />
     </div>
   );
 };

@@ -21,6 +21,8 @@ import { createShareLink } from '../database/createShareLink';
 import { getPhotoDate, toLosAngelesDateString } from '../utils/exifUtils';
 import { piStorage } from '../lib/pistorage';
 import { getPendingSharedPhotos, clearSharedPhotos } from '../utils/sharedPhotosDb';
+import { createBebShortUrl } from '../lib/beb';
+import ShortUrlModal from './ShortUrlModal';
 
 function mobileCheck() {
   let check = false;
@@ -131,6 +133,99 @@ const Home = () => {
   const [shareEditLabel, setShareEditLabel] = useState<'Share' | 'Copied!'>('Share');
   const viewShareCache = useRef<{ url: string; time: number } | null>(null);
   const editShareCache = useRef<{ url: string; time: number } | null>(null);
+
+  // Short URL Modal state
+  const [shortUrlModalOpen, setShortUrlModalOpen] = useState<boolean>(false);
+  const [isGeneratingShortUrl, setIsGeneratingShortUrl] = useState<boolean>(false);
+  const [shortUrlData, setShortUrlData] = useState<{ shortUrl: string | null; destinationUrl: string } | null>(null);
+  const [shortUrlError, setShortUrlError] = useState<string | null>(null);
+  const shortUrlCache = useRef<Record<string, string>>({});
+
+  const handleShareEntry = async (
+    getDetails: () => { title: string; content: string } | null,
+    cacheRef: React.MutableRefObject<{ url: string; time: number } | null>,
+    setLabel: React.Dispatch<React.SetStateAction<'Share' | 'Copied!'>>
+  ) => {
+    const details = getDetails();
+    if (!details) return;
+
+    setShortUrlModalOpen(true);
+    setIsGeneratingShortUrl(true);
+    setShortUrlError(null);
+    setShortUrlData(null);
+
+    let destinationUrl: string;
+    try {
+      const cache = cacheRef.current;
+      if (cache && Date.now() - cache.time < 30_000) {
+        destinationUrl = cache.url;
+      } else {
+        destinationUrl = await createShareLink('entry', details.title, details.content);
+        cacheRef.current = { url: destinationUrl, time: Date.now() };
+      }
+    } catch (err: any) {
+      console.error('Failed to create share link:', err);
+      setShortUrlModalOpen(false);
+      setIsGeneratingShortUrl(false);
+      alert('Failed to create share link.');
+      return;
+    }
+
+    // Check if short URL is already cached for this destination URL
+    if (shortUrlCache.current[destinationUrl]) {
+      const cachedShortUrl = shortUrlCache.current[destinationUrl];
+      setShortUrlData({
+        shortUrl: cachedShortUrl,
+        destinationUrl,
+      });
+      setIsGeneratingShortUrl(false);
+      setLabel('Copied!');
+      setTimeout(() => setLabel('Share'), 2000);
+      try {
+        await navigator.clipboard.writeText(cachedShortUrl);
+      } catch (cErr) {
+        console.warn('Clipboard write error:', cErr);
+      }
+      return;
+    }
+
+    setShortUrlData({
+      shortUrl: null,
+      destinationUrl,
+    });
+
+    try {
+      const bebRes = await createBebShortUrl(destinationUrl);
+      shortUrlCache.current[destinationUrl] = bebRes.shortUrl;
+      setShortUrlData({
+        shortUrl: bebRes.shortUrl,
+        destinationUrl,
+      });
+      setIsGeneratingShortUrl(false);
+      setLabel('Copied!');
+      setTimeout(() => setLabel('Share'), 2000);
+      try {
+        await navigator.clipboard.writeText(bebRes.shortUrl);
+      } catch (cErr) {
+        console.warn('Clipboard write error:', cErr);
+      }
+    } catch (err: any) {
+      console.error('Failed to create short URL:', err);
+      setShortUrlError(err.message || 'Short URL service is currently unreachable.');
+      setShortUrlData({
+        shortUrl: null,
+        destinationUrl,
+      });
+      setIsGeneratingShortUrl(false);
+      setLabel('Copied!');
+      setTimeout(() => setLabel('Share'), 2000);
+      try {
+        await navigator.clipboard.writeText(destinationUrl);
+      } catch (cErr) {
+        console.warn('Clipboard write error:', cErr);
+      }
+    }
+  };
 
   // View memories modal
   const viewMemoriesModal = useRef<HTMLDivElement>(null);
@@ -1026,7 +1121,7 @@ const Home = () => {
               <FileUpload
                 accept="image/*"
                 auto={ false }
-                maxFileSize={ 10_485_760 } // 10MB
+                maxFileSize={ 1_610_612_736 } // 1.5GB
                 multiple
                 name="fileUpload[]"
                 chooseLabel="Add Memories"
@@ -1055,24 +1150,16 @@ const Home = () => {
             </div>
 
             <div className="modal-footer d-flex flex-wrap gap-2">
-              <button type="button" className="btn btn-secondary" data-mdb-ripple-init onClick={ async () => {
-                try {
-                  const cache = editShareCache.current;
-                  let url: string;
-                  if (cache && Date.now() - cache.time < 30_000) {
-                    url = cache.url;
-                  } else {
-                    const title = entryModalTitle.current!.textContent!;
-                    const text = entryModalTextArea.current!.value;
-                    url = await createShareLink('entry', title, text);
-                    editShareCache.current = { url, time: Date.now() };
-                  }
-                  await navigator.clipboard.writeText(url);
-                  setShareEditLabel('Copied!');
-                  setTimeout(() => setShareEditLabel('Share'), 2000);
-                } catch (e) {
-                  alert('Failed to create share link.');
-                }
+              <button type="button" className="btn btn-secondary" data-mdb-ripple-init onClick={ () => {
+                handleShareEntry(
+                  () => {
+                    const title = entryModalTitle.current?.textContent || 'Journal Entry';
+                    const content = entryModalTextArea.current?.value || '';
+                    return { title, content };
+                  },
+                  editShareCache,
+                  setShareEditLabel
+                );
               }}><i className="fas fa-link me-1"></i>{shareEditLabel}</button>
               <button type="button" className="btn btn-secondary" data-mdb-ripple-init data-mdb-dismiss="modal">Close</button>
               <button type="button" className="btn btn-danger visually-hidden" data-mdb-ripple-init data-mdb-dismiss="modal" onClick={ () => {
@@ -1247,25 +1334,17 @@ const Home = () => {
             </div>
             <div className="modal-footer d-flex justify-content-between align-items-center">
               <div className="d-flex flex-wrap gap-2">
-                <button type="button" className="btn btn-secondary" data-mdb-ripple-init onClick={ async () => {
+                <button type="button" className="btn btn-secondary" data-mdb-ripple-init onClick={ () => {
                   const entry = currentViewEntry.current;
                   if (!entry) return;
-                  try {
-                    const cache = viewShareCache.current;
-                    let url: string;
-                    if (cache && Date.now() - cache.time < 30_000) {
-                      url = cache.url;
-                    } else {
-                      const title = viewEntryModalTitle.current!.textContent!;
-                      url = await createShareLink('entry', title, entry.journal_entry);
-                      viewShareCache.current = { url, time: Date.now() };
-                    }
-                    await navigator.clipboard.writeText(url);
-                    setShareEntryLabel('Copied!');
-                    setTimeout(() => setShareEntryLabel('Share'), 2000);
-                  } catch (e) {
-                    alert('Failed to create share link.');
-                  }
+                  handleShareEntry(
+                    () => {
+                      const title = viewEntryModalTitle.current?.textContent || 'Journal Entry';
+                      return { title, content: entry.journal_entry };
+                    },
+                    viewShareCache,
+                    setShareEntryLabel
+                  );
                 }}><i className="fas fa-link me-1"></i>{shareEntryLabel}</button>
                 <button type="button" className="btn btn-secondary" data-mdb-ripple-init onClick={ async () => {
                   const date = viewEntryModal.current!.getAttribute('data-startstr')!;
@@ -1383,7 +1462,7 @@ const Home = () => {
               <div className="upload-memories-dropzone p-4 text-center border rounded mb-3" style={{ borderStyle: 'dashed', cursor: 'pointer' }} onClick={() => document.getElementById('batch-photo-input')?.click()}>
                 <i className="fas fa-images fa-3x mb-2 text-primary"></i>
                 <h5>Click or drag & drop photos here</h5>
-                <span className="text-muted">Supports JPEG, PNG, HEIC, WebP (max 2 MB per image, uploaded in batches of 5)</span>
+                <span className="text-muted">Supports photos and videos up to 1.5 GB (server compresses automatically)</span>
                 <input type="file" id="batch-photo-input" multiple accept="image/*" className="d-none" onChange={ handleBatchFilesSelected } />
               </div>
 
@@ -1425,6 +1504,21 @@ const Home = () => {
           </div>
         </div>
       </div>
+
+      {/* Short URL Modal */}
+      <ShortUrlModal
+        isOpen={shortUrlModalOpen}
+        isLoading={isGeneratingShortUrl}
+        shortUrl={shortUrlData?.shortUrl ?? null}
+        destinationUrl={shortUrlData?.destinationUrl ?? null}
+        error={shortUrlError}
+        onClose={() => setShortUrlModalOpen(false)}
+        successSubtitle="24-hour short link generated & copied to clipboard:"
+        errorSubtitle="Short URL generation failed. Full share link copied to clipboard:"
+        destinationLabel="DESTINATION SHARE URL"
+        destinationFallbackLabel="FULL SHARE URL"
+        destinationExpiryText="Expires in 24 hours"
+      />
 
     </div>
   );
