@@ -138,6 +138,61 @@ const Memories: React.FC = () => {
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadStatus, setUploadStatus] = useState<string>('');
 
+  // Content Viewing Modal (Lightbox) State
+  const [viewingPhotoIndex, setViewingPhotoIndex] = useState<number | null>(null);
+
+  // Copy Short URL Modal State
+  const [shortUrlModalOpen, setShortUrlModalOpen] = useState<boolean>(false);
+  const [isGeneratingShortUrl, setIsGeneratingShortUrl] = useState<boolean>(false);
+  const [shortUrlData, setShortUrlData] = useState<{ shortUrl: string; destinationUrl: string } | null>(null);
+  const [shortUrlError, setShortUrlError] = useState<string | null>(null);
+  const [copiedTooltip, setCopiedTooltip] = useState<boolean>(false);
+  const tooltipTimeoutRef = useRef<any>(null);
+
+  useEffect(() => {
+    return () => {
+      if (tooltipTimeoutRef.current) clearTimeout(tooltipTimeoutRef.current);
+    };
+  }, []);
+
+  // Keyboard navigation for Content Viewing Modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (viewingPhotoIndex === null) return;
+      if (e.key === 'ArrowLeft') {
+        setViewingPhotoIndex((prev) => (prev !== null && prev > 0 ? prev - 1 : prev));
+      } else if (e.key === 'ArrowRight') {
+        setViewingPhotoIndex((prev) => (prev !== null && prev < photos.length - 1 ? prev + 1 : prev));
+      } else if (e.key === 'Escape') {
+        if (shortUrlModalOpen) {
+          setShortUrlModalOpen(false);
+        } else {
+          setViewingPhotoIndex(null);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [viewingPhotoIndex, photos.length, shortUrlModalOpen]);
+
+  const isVideoFile = (filename: string) => {
+    return /\.(mp4|mov|webm|avi|mkv)$/i.test(filename);
+  };
+
+  const handlePrevPhoto = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setViewingPhotoIndex((prev) => (prev !== null && prev > 0 ? prev - 1 : prev));
+  };
+
+  const handleNextPhoto = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setViewingPhotoIndex((prev) => (prev !== null && prev < photos.length - 1 ? prev + 1 : prev));
+  };
+
+  const handleCloseContentModal = () => {
+    setViewingPhotoIndex(null);
+  };
+
   // Helper to clear all session memories cache entries when mutations happen
   const clearMemoriesCache = () => {
     for (let i = sessionStorage.length - 1; i >= 0; i--) {
@@ -497,41 +552,49 @@ const Memories: React.FC = () => {
     }
   };
 
-  // Context Menu Action: Send to Friend
-  const handleSendToFriend = async (photo: MemoryPhoto) => {
+  // Context Menu / Modal Action: Copy short URL
+  const handleOpenShortUrlModal = async (photo: MemoryPhoto) => {
     setContextMenu({ visible: false, x: 0, y: 0, photo: null });
+    setShortUrlModalOpen(true);
+    setIsGeneratingShortUrl(true);
+    setShortUrlError(null);
+    setShortUrlData(null);
+    setCopiedTooltip(false);
+
     try {
-      // Generate a short URL with a random 9-digit hexadecimal alias pointing to the image URL
-      let shareUrl = photo.url;
+      const bebRes = await createBebShortUrl(photo.url);
+      setShortUrlData({
+        shortUrl: bebRes.shortUrl,
+        destinationUrl: photo.url,
+      });
+      setIsGeneratingShortUrl(false);
       try {
-        const bebRes = await createBebShortUrl(photo.url);
-        shareUrl = bebRes.shortUrl;
-      } catch (shortErr) {
-        console.warn('Could not generate Beb short link, falling back to full image URL:', shortErr);
+        await navigator.clipboard.writeText(bebRes.shortUrl);
+      } catch (cErr) {
+        console.warn('Clipboard write error:', cErr);
       }
-
-      if (navigator.share) {
-        try {
-          await navigator.share({
-            title: 'Journal Memory Photo',
-            text: `Check out this memory photo from ${formatDateOrdinal(photo.date)}!`,
-            url: shareUrl,
-          });
-          return;
-        } catch (err: any) {
-          if (err.name === 'AbortError') return;
-          console.warn('Native share error:', err);
-        }
-      }
-
-      await navigator.clipboard.writeText(shareUrl);
-      alert(`Shortened photo link (${shareUrl}) copied to clipboard! You can now send it to a friend.`);
-    } catch (e: any) {
-      alert('Could not share photo link: ' + (e.message || e));
+    } catch (err: any) {
+      console.error('Failed to create short URL:', err);
+      setShortUrlError(err.message || 'Failed to generate short URL');
+      setIsGeneratingShortUrl(false);
     }
   };
 
-  // Context Menu Action: Delete Memory
+  const handleCopyShortUrl = async () => {
+    if (!shortUrlData?.shortUrl) return;
+    try {
+      await navigator.clipboard.writeText(shortUrlData.shortUrl);
+      setCopiedTooltip(true);
+      if (tooltipTimeoutRef.current) clearTimeout(tooltipTimeoutRef.current);
+      tooltipTimeoutRef.current = setTimeout(() => {
+        setCopiedTooltip(false);
+      }, 2000);
+    } catch (err) {
+      console.error('Copy short URL failed:', err);
+    }
+  };
+
+  // Context Menu / Modal Action: Delete Memory
   const handleDeleteMemory = async (photo: MemoryPhoto) => {
     setContextMenu({ visible: false, x: 0, y: 0, photo: null });
     const proceed = window.confirm(`Are you sure you want to delete this memory photo (${photo.name})?`);
@@ -544,6 +607,7 @@ const Memories: React.FC = () => {
 
       clearMemoriesCache();
       setPhotos((prev) => prev.filter((p) => !(p.name === photo.name && p.date === photo.date)));
+      setViewingPhotoIndex(null);
       await refreshMemoryIndex();
     } catch (err: any) {
       console.error('Error deleting memory:', err);
@@ -843,10 +907,10 @@ const Memories: React.FC = () => {
             <div
               key={idx}
               className="memory-card"
-              onClick={() => window.open(photo.url, '_blank')}
+              onClick={() => setViewingPhotoIndex(idx)}
               onContextMenu={(e) => handleContextMenu(e, photo)}
               style={{ cursor: 'pointer' }}
-              title={`Click to view full image (${photo.name})`}
+              title={`Click to view ${isVideoFile(photo.name) ? 'video' : 'photo'} (${photo.name})`}
             >
               <img
                 src={photo.thumbnail_url || photo.url}
@@ -874,37 +938,40 @@ const Memories: React.FC = () => {
           onClick={(e) => e.stopPropagation()}
         >
           <ul>
-            {/* Group 1: Open & View */}
-            <li onClick={() => window.open(contextMenu.photo!.url, '_blank')}>
+            <li onClick={() => {
+              const date = contextMenu.photo!.date;
+              setContextMenu({ visible: false, x: 0, y: 0, photo: null });
+              handleViewJournalEntry(date);
+            }}>
+              <i className="fas fa-book-open"></i>View written entry
+            </li>
+            <li onClick={() => {
+              const url = contextMenu.photo!.url;
+              setContextMenu({ visible: false, x: 0, y: 0, photo: null });
+              window.open(url, '_blank');
+            }}>
               <i className="fas fa-arrow-up-right-from-square"></i>Open in new tab
             </li>
-            <li onClick={() => handleViewJournalEntry(contextMenu.photo!.date)}>
-              <i className="fas fa-book-open"></i>View journal entry
-            </li>
-
-            {/* Group 2: Copy & Export */}
-            <li className="menu-divider-top" onClick={() => handleCopyImage(contextMenu.photo!)}>
+            <li onClick={() => handleCopyImage(contextMenu.photo!)}>
               <i className="fas fa-copy"></i>Copy image
             </li>
             <li onClick={() => handleCopyUrl(contextMenu.photo!)}>
-              <i className="fas fa-link"></i>Copy URL
+              <i className="fas fa-link"></i>Copy image URL
+            </li>
+            <li onClick={() => handleOpenShortUrlModal(contextMenu.photo!)}>
+              <i className="fas fa-share-nodes"></i>Copy short URL
             </li>
             <li
               onClick={async () => {
-                const res = await fetch(contextMenu.photo!.url);
+                const photo = contextMenu.photo!;
+                setContextMenu({ visible: false, x: 0, y: 0, photo: null });
+                const res = await fetch(photo.url);
                 const blob = await res.blob();
-                fileDownload(blob, contextMenu.photo!.name);
+                fileDownload(blob, photo.name);
               }}
             >
               <i className="fas fa-download"></i>Download
             </li>
-
-            {/* Group 3: Share */}
-            <li className="menu-divider-top" onClick={() => handleSendToFriend(contextMenu.photo!)}>
-              <i className="fas fa-paper-plane"></i>Send to friend
-            </li>
-
-            {/* Group 4: Destructive */}
             <li
               className="delete-option"
               onClick={() => handleDeleteMemory(contextMenu.photo!)}
@@ -1207,6 +1274,256 @@ const Memories: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Content Viewing Modal (Lightbox) */}
+      {viewingPhotoIndex !== null && photos[viewingPhotoIndex] && (
+        <div
+          className="content-modal-backdrop"
+          onClick={handleCloseContentModal}
+        >
+          <div
+            className="content-modal-container"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Left Media Viewing Area with Centered Navigation Arrows */}
+            <div className="content-modal-media-area">
+              <button
+                type="button"
+                className="content-modal-arrow-btn left-arrow"
+                onClick={handlePrevPhoto}
+                disabled={viewingPhotoIndex <= 0}
+                title="Previous media (Left Arrow)"
+              >
+                <i className="fas fa-chevron-left"></i>
+              </button>
+
+              {isVideoFile(photos[viewingPhotoIndex].name) ? (
+                <video
+                  key={photos[viewingPhotoIndex].url}
+                  src={photos[viewingPhotoIndex].url}
+                  autoPlay
+                  controls
+                  loop
+                  playsInline
+                  className="content-modal-media"
+                />
+              ) : (
+                <img
+                  key={photos[viewingPhotoIndex].url}
+                  src={photos[viewingPhotoIndex].url}
+                  alt={photos[viewingPhotoIndex].name}
+                  className="content-modal-media"
+                />
+              )}
+
+              <button
+                type="button"
+                className="content-modal-arrow-btn right-arrow"
+                onClick={handleNextPhoto}
+                disabled={viewingPhotoIndex >= photos.length - 1}
+                title="Next media (Right Arrow)"
+              >
+                <i className="fas fa-chevron-right"></i>
+              </button>
+            </div>
+
+            {/* Right Sidebar Section */}
+            <div className="content-modal-sidebar">
+              <div>
+                <div className="content-modal-sidebar-header">
+                  <div className="content-modal-date-display">
+                    {formatDateOrdinal(photos[viewingPhotoIndex].date)}
+                  </div>
+                  <button
+                    type="button"
+                    className="content-modal-close-btn"
+                    onClick={handleCloseContentModal}
+                    title="Close (Esc)"
+                  >
+                    <i className="fas fa-xmark"></i>
+                  </button>
+                </div>
+
+                <div className="content-modal-actions-list">
+                  <button
+                    type="button"
+                    className="content-modal-action-item"
+                    onClick={() => {
+                      const date = photos[viewingPhotoIndex].date;
+                      handleCloseContentModal();
+                      handleViewJournalEntry(date);
+                    }}
+                  >
+                    <i className="fas fa-book-open"></i>
+                    <span>View written entry</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="content-modal-action-item"
+                    onClick={() => window.open(photos[viewingPhotoIndex].url, '_blank')}
+                  >
+                    <i className="fas fa-arrow-up-right-from-square"></i>
+                    <span>Open in new tab</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="content-modal-action-item"
+                    onClick={() => handleCopyImage(photos[viewingPhotoIndex])}
+                  >
+                    <i className="fas fa-copy"></i>
+                    <span>Copy image</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="content-modal-action-item"
+                    onClick={() => handleCopyUrl(photos[viewingPhotoIndex])}
+                  >
+                    <i className="fas fa-link"></i>
+                    <span>Copy image URL</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="content-modal-action-item"
+                    onClick={() => handleOpenShortUrlModal(photos[viewingPhotoIndex])}
+                  >
+                    <i className="fas fa-share-nodes"></i>
+                    <span>Copy short URL</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="content-modal-action-item"
+                    onClick={async () => {
+                      const photo = photos[viewingPhotoIndex];
+                      const res = await fetch(photo.url);
+                      const blob = await res.blob();
+                      fileDownload(blob, photo.name);
+                    }}
+                  >
+                    <i className="fas fa-download"></i>
+                    <span>Download</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="content-modal-action-item delete-action"
+                    onClick={() => handleDeleteMemory(photos[viewingPhotoIndex])}
+                  >
+                    <i className="fas fa-trash-can"></i>
+                    <span>Delete memory</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Copy Short URL Modal */}
+      {shortUrlModalOpen && (
+        <div
+          className="short-url-modal-backdrop"
+          onClick={() => setShortUrlModalOpen(false)}
+        >
+          <div
+            className="short-url-card"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {isGeneratingShortUrl ? (
+              <div className="short-url-loading-container">
+                <div className="short-url-spinner"></div>
+                <div className="short-url-loading-text">Generating short URL...</div>
+                <div className="short-url-loading-subtext">Connecting to beb.mzecheru.com</div>
+              </div>
+            ) : shortUrlError ? (
+              <div className="short-url-error-container">
+                <div className="short-url-error-icon">
+                  <i className="fas fa-triangle-exclamation"></i>
+                </div>
+                <h5 className="text-white fw-bold mb-2">Failed to Generate Short URL</h5>
+                <p className="text-muted small mb-3">{shortUrlError}</p>
+                <div className="d-flex justify-content-center gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setShortUrlModalOpen(false)}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            ) : shortUrlData && (
+              <>
+                {/* Header */}
+                <div className="short-url-header">
+                  <div className="short-url-check-circle">
+                    <div className="short-url-check-inner">
+                      <i className="fas fa-check"></i>
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="short-url-title">Share Link Ready</h4>
+                    <p className="short-url-subtitle">
+                      7-day short link generated &amp; copied to clipboard:
+                    </p>
+                  </div>
+                </div>
+
+                {/* Primary Box: Short URL with Copy button and Tooltip */}
+                <div className="short-url-box primary-link-box">
+                  <div className="short-url-link-group">
+                    <i className="fas fa-link link-icon primary-link-icon"></i>
+                    <span className="short-url-text">{shortUrlData.shortUrl}</span>
+                  </div>
+                  <div className="copy-btn-wrapper">
+                    {copiedTooltip && (
+                      <div className="copied-tooltip">
+                        Copied
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className="short-url-copy-btn"
+                      onClick={handleCopyShortUrl}
+                      title="Copy short link"
+                    >
+                      <i className="far fa-copy"></i>
+                      <span>Copy</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Secondary Box: Destination Signed URL */}
+                <div className="destination-header-row">
+                  <span className="destination-label">DESTINATION SIGNED URL</span>
+                  <span className="destination-status">Expires in 1 week</span>
+                </div>
+                <div className="short-url-box destination-box">
+                  <i className="fas fa-link link-icon destination-link-icon"></i>
+                  <span className="destination-url-text" title={shortUrlData.destinationUrl}>
+                    {shortUrlData.destinationUrl}
+                  </span>
+                </div>
+
+                {/* Bottom Got It Button */}
+                <div className="short-url-footer">
+                  <button
+                    type="button"
+                    className="short-url-got-it-btn"
+                    onClick={() => setShortUrlModalOpen(false)}
+                  >
+                    Got it
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

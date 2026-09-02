@@ -48,43 +48,64 @@ export async function createBebShortUrl(
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const alias = customAlias || generateRandomHexId(9);
 
-    try {
-      const res = await fetch(`${bebBaseUrl}/api/create`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          creator: creatorId,
-          url: targetUrl,
-          alias,
-          permanent: true,
-        }),
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({ error: res.statusText }));
-        throw new Error(`[Beb Short URL Failed] ${res.status}: ${errData.error || res.statusText}`);
-      }
-
-      const data = await res.json();
-      if (data.error) {
-        // If alias collision, retry with a new alias
-        if (typeof data.error === 'string' && data.error.toLowerCase().includes('already in use') && !customAlias) {
-          continue;
-        }
-        throw new Error(`[Beb Short URL Failed]: ${data.error}`);
-      }
-
-      const shortAlias = data.short_url || alias;
-      return {
-        shortUrl: `${bebBaseUrl}/${shortAlias}`,
-        alias: shortAlias,
-      };
-    } catch (err: any) {
-      lastError = err;
-      if (customAlias) break;
+    // Candidates to avoid browser CORS:
+    // 1. Same-origin Journal proxy (/api/create-short-url)
+    // 2. Direct Beb API (${bebBaseUrl}/api/create)
+    const requestCandidates: string[] = [];
+    if (typeof window !== 'undefined' && window.location) {
+      requestCandidates.push('/api/create-short-url');
     }
+    requestCandidates.push(`${bebBaseUrl}/api/create`);
+
+    let collisionOccurred = false;
+
+    for (const endpoint of requestCandidates) {
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            creator: creatorId,
+            url: targetUrl,
+            alias,
+            permanent: true,
+          }),
+        });
+
+        if (!res.ok) {
+          // If proxy returned 404 or 502, try direct Beb endpoint
+          if ((res.status === 404 || res.status === 502) && endpoint !== `${bebBaseUrl}/api/create`) {
+            continue;
+          }
+          const errData = await res.json().catch(() => ({ error: res.statusText }));
+          throw new Error(`[Beb Short URL Failed] ${res.status}: ${errData.error || res.statusText}`);
+        }
+
+        const data = await res.json();
+        if (data.error) {
+          // If alias collision, retry with a new alias
+          if (typeof data.error === 'string' && data.error.toLowerCase().includes('already in use') && !customAlias) {
+            collisionOccurred = true;
+            break;
+          }
+          throw new Error(`[Beb Short URL Failed]: ${data.error}`);
+        }
+
+        const shortAlias = data.short_url || alias;
+        return {
+          shortUrl: `${bebBaseUrl}/${shortAlias}`,
+          alias: shortAlias,
+        };
+      } catch (err: any) {
+        lastError = err;
+        // Continue to fallback endpoint if available
+      }
+    }
+
+    if (collisionOccurred) continue;
+    if (customAlias) break;
   }
 
   throw lastError || new Error('Failed to create short URL on Beb');

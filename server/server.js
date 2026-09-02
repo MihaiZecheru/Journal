@@ -140,6 +140,37 @@ app.post('/api/generate-search-keywords', (req, res) => {
     .catch((err) => res.status(500).json({ error: err.message, keywords: null }));
 });
 
+app.post('/api/create-short-url', async (req, res) => {
+  try {
+    const { url, alias, creator, permanent } = req.body || {};
+    if (!url) {
+      return res.status(400).json({ error: "Missing 'url' parameter", short_url: null });
+    }
+
+    const bebUrl = (process.env.REACT_APP_BEB_URL || process.env.BEB_URL || 'https://beb.mzecheru.com').replace(/\/+$/, '');
+    const creatorId = creator || process.env.REACT_APP_BEB_USER_ID || process.env.BEB_USER_ID || '2f02d928-5f92-46cf-a2e8-49a3aa8a7bc1';
+
+    const bebRes = await fetch(`${bebUrl}/api/create`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        creator: creatorId,
+        url,
+        alias,
+        permanent: permanent !== undefined ? permanent : true,
+      }),
+    });
+
+    const data = await bebRes.json();
+    return res.status(bebRes.status).json(data);
+  } catch (err) {
+    console.error('Error proxying short URL creation to Beb:', err);
+    return res.status(500).json({ error: err.message, short_url: null });
+  }
+});
+
 app.post('/share-target', (req, res) => {
   res.redirect(303, '/home?shared_photos=1');
 });
