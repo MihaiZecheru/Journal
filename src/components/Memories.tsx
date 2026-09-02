@@ -210,11 +210,11 @@ const Memories: React.FC = () => {
     return /\.(mp4|mov|webm|avi|mkv)$/i.test(filename);
   };
 
-  // Preload adjacent 2 medias in either direction (4 total) for instant navigation
+  // Preload adjacent 3 medias in either direction (6 total) for instant navigation
   useEffect(() => {
     if (viewingPhotoIndex === null || photos.length === 0) return;
 
-    const offsets = [-2, -1, 1, 2];
+    const offsets = [-3, -2, -1, 1, 2, 3];
     offsets.forEach((offset) => {
       const idx = viewingPhotoIndex + offset;
       if (idx >= 0 && idx < photos.length) {
@@ -1543,9 +1543,9 @@ const Memories: React.FC = () => {
                 <i className="fas fa-chevron-right"></i>
               </button>
 
-              {/* Hidden DOM preloader for 2 medias in either direction (4 total) */}
+              {/* Hidden DOM preloader for 3 medias in either direction (6 total) */}
               <div style={{ display: 'none' }} aria-hidden="true">
-                {[-2, -1, 1, 2].map((offset) => {
+                {[-3, -2, -1, 1, 2, 3].map((offset) => {
                   const targetIdx = viewingPhotoIndex + offset;
                   if (targetIdx < 0 || targetIdx >= photos.length) return null;
                   const media = photos[targetIdx];
