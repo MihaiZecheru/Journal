@@ -270,6 +270,12 @@ const Home = () => {
     e.target.value = '';
   };
 
+  const handleSetAllUnknown = () => {
+    setBatchFiles((prev) =>
+      prev.map((item) => ({ ...item, date: 'Unknown-Date', isOriginalDate: true }))
+    );
+  };
+
   const processBatchUpload = async () => {
     if (batchFiles.length === 0) return;
     setIsUploadingBatch(true);
@@ -279,8 +285,9 @@ const Home = () => {
       const userID = await GetUserID();
       const groupedByDate: Record<string, File[]> = {};
       batchFiles.forEach((item) => {
-        if (!groupedByDate[item.date]) groupedByDate[item.date] = [];
-        groupedByDate[item.date].push(item.file);
+        const folderDate = item.date === 'Unknown' || item.date === 'Unknown-Date' ? 'Unknown-Date' : item.date;
+        if (!groupedByDate[folderDate]) groupedByDate[folderDate] = [];
+        groupedByDate[folderDate].push(item.file);
       });
 
       const dates = Object.keys(groupedByDate);
@@ -301,6 +308,14 @@ const Home = () => {
           }
         } catch (uploadErr) {
           console.error(`Error uploading files for ${date}:`, uploadErr);
+        }
+      }
+
+      // Clear memories cache so /memories immediately sees new uploads
+      for (let i = sessionStorage.length - 1; i >= 0; i--) {
+        const key = sessionStorage.key(i);
+        if (key?.startsWith('journal_memories_cache_')) {
+          sessionStorage.removeItem(key);
         }
       }
 
@@ -1473,12 +1488,24 @@ const Home = () => {
 
               { batchFiles.length > 0 && (
                 <div className="batch-preview-container">
-                  <h6 className="mb-2">Selected Photos ({ batchFiles.length }):</h6>
+                  <div className="d-flex align-items-center justify-content-between mb-2">
+                    <h6 className="mb-0">Selected Photos ({ batchFiles.length }):</h6>
+                    <button
+                      type="button"
+                      className="btn btn-outline-secondary btn-sm py-0 px-2"
+                      style={{ fontSize: '0.72rem' }}
+                      onClick={handleSetAllUnknown}
+                      disabled={isUploadingBatch}
+                      title="Set all selected photos to Unknown Date"
+                    >
+                      <i className="far fa-calendar-times me-1"></i>Set All Unknown
+                    </button>
+                  </div>
 
-                  { batchFiles.some((f) => !f.isOriginalDate) && (
+                  { batchFiles.some((f) => !f.isOriginalDate && f.date !== 'Unknown-Date') && (
                     <div className="alert alert-warning py-1 px-2 mb-2 d-flex align-items-center gap-2" style={{ fontSize: '0.75rem' }}>
                       <i className="fas fa-triangle-exclamation text-warning"></i>
-                      <span>Some photos lack original capture metadata (<strong>DateTimeOriginal</strong> or <strong>CreateDate</strong>). Please verify dates before uploading.</span>
+                      <span>Some photos lack original capture metadata (<strong>DateTimeOriginal</strong> or <strong>CreateDate</strong>). Verify dates or click <strong>Unknown</strong>.</span>
                     </div>
                   ) }
 
@@ -1487,41 +1514,86 @@ const Home = () => {
                       <div key={ idx } className="position-relative border rounded p-1" style={{ width: '125px' }}>
                         <div className="position-relative">
                           <img src={ item.previewUrl } alt="preview" className="img-thumbnail w-100" style={{ height: '75px', objectFit: 'cover' }} />
-                          { !item.isOriginalDate && (
+                          { item.date === 'Unknown-Date' ? (
+                            <span
+                              className="position-absolute top-0 start-0 m-1 badge bg-secondary text-white"
+                              style={{ fontSize: '0.58rem', zIndex: 1, padding: '2px 4px' }}
+                              title="Marked as Unknown Date"
+                            >
+                              <i className="far fa-calendar-times me-1"></i>Unknown
+                            </span>
+                          ) : !item.isOriginalDate ? (
                             <span
                               className="position-absolute top-0 start-0 m-1 badge bg-warning text-dark"
                               style={{ fontSize: '0.6rem', zIndex: 1, padding: '2px 4px' }}
-                              title="Date not found in original EXIF capture metadata (DateTimeOriginal or CreateDate). Please set manually."
+                              title="Date not found in original EXIF capture metadata (DateTimeOriginal or CreateDate). Please set manually or click Unknown."
                             >
                               <i className="fas fa-triangle-exclamation me-1"></i>Check date
                             </span>
-                          ) }
+                          ) : null }
                           <button type="button" className="btn-close position-absolute top-0 end-0 bg-white rounded-circle p-1" aria-label="Remove" onClick={() => {
                             setBatchFiles(batchFiles.filter((_, i) => i !== idx));
                           }}></button>
                         </div>
                         <div className="mt-1">
-                          <input
-                            type="date"
-                            className={`form-control form-control-sm p-0 px-1 text-center ${!item.isOriginalDate ? 'border-warning' : ''}`}
-                            style={{ fontSize: '0.72rem', height: '24px' }}
-                            value={item.date}
-                            onChange={(e) => {
-                              const newDate = e.target.value;
-                              setBatchFiles((prev) =>
-                                prev.map((f, i) => (i === idx ? { ...f, date: newDate, isOriginalDate: true } : f))
-                              );
-                            }}
-                            disabled={isUploadingBatch}
-                          />
-                          { !item.isOriginalDate && (
-                            <div
-                              className="text-warning text-center mt-1 d-flex align-items-center justify-content-center gap-1"
-                              style={{ fontSize: '0.64rem', lineHeight: '1.1' }}
-                              title="Estimated date: not from camera capture EXIF. Please set manually."
-                            >
-                              <i className="fas fa-triangle-exclamation"></i>
-                              <span>Check date</span>
+                          { item.date === 'Unknown-Date' ? (
+                            <div className="d-flex align-items-center justify-content-between p-1 bg-dark rounded border border-secondary" style={{ height: '26px' }}>
+                              <span className="text-white" style={{ fontSize: '0.62rem' }}>Unknown Date</span>
+                              <button
+                                type="button"
+                                className="btn btn-link btn-sm p-0 text-primary text-decoration-none"
+                                style={{ fontSize: '0.62rem' }}
+                                onClick={() => {
+                                  setBatchFiles((prev) =>
+                                    prev.map((f, i) => (i === idx ? { ...f, date: toLosAngelesDateString(new Date()), isOriginalDate: true } : f))
+                                  );
+                                }}
+                                disabled={isUploadingBatch}
+                              >
+                                Set Date
+                              </button>
+                            </div>
+                          ) : (
+                            <div>
+                              <div className="d-flex align-items-center gap-1">
+                                <input
+                                  type="date"
+                                  className={`form-control form-control-sm p-0 px-1 text-center ${!item.isOriginalDate ? 'border-warning' : ''}`}
+                                  style={{ fontSize: '0.72rem', height: '24px' }}
+                                  value={item.date}
+                                  onChange={(e) => {
+                                    const newDate = e.target.value;
+                                    setBatchFiles((prev) =>
+                                      prev.map((f, i) => (i === idx ? { ...f, date: newDate, isOriginalDate: true } : f))
+                                    );
+                                  }}
+                                  disabled={isUploadingBatch}
+                                />
+                                <button
+                                  type="button"
+                                  className="btn btn-outline-secondary btn-sm py-0 px-1"
+                                  style={{ fontSize: '0.62rem', height: '24px' }}
+                                  onClick={() => {
+                                    setBatchFiles((prev) =>
+                                      prev.map((f, i) => (i === idx ? { ...f, date: 'Unknown-Date', isOriginalDate: true } : f))
+                                    );
+                                  }}
+                                  disabled={isUploadingBatch}
+                                  title="Mark as Unknown Date"
+                                >
+                                  ?
+                                </button>
+                              </div>
+                              { !item.isOriginalDate && (
+                                <div
+                                  className="text-warning text-center mt-1 d-flex align-items-center justify-content-center gap-1"
+                                  style={{ fontSize: '0.64rem', lineHeight: '1.1' }}
+                                  title="Estimated date: not from camera capture EXIF. Please set manually or click ? for Unknown."
+                                >
+                                  <i className="fas fa-triangle-exclamation"></i>
+                                  <span>Check date</span>
+                                </div>
+                              ) }
                             </div>
                           ) }
                         </div>

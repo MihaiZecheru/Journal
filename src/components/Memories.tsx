@@ -78,8 +78,12 @@ const Memories: React.FC = () => {
   const initialYearParam = searchParams.get('year');
   const initialMonthParam = searchParams.get('month');
 
-  const parsedInitialMode: 'month' | 'year' =
-    initialModeParam === 'year' || initialModeParam === 'month' ? initialModeParam : 'month';
+  const parsedInitialMode: 'month' | 'year' | 'unknown' =
+    initialModeParam === 'unknown'
+      ? 'unknown'
+      : initialModeParam === 'year'
+      ? 'year'
+      : 'month';
 
   const parsedInitialYear =
     initialYearParam && !isNaN(parseInt(initialYearParam, 10))
@@ -100,12 +104,13 @@ const Memories: React.FC = () => {
     }
   }
 
-  // View Mode: 'month' | 'year'
-  const [viewMode, setViewMode] = useState<'month' | 'year'>(parsedInitialMode);
+  // View Mode: 'month' | 'year' | 'unknown'
+  const [viewMode, setViewMode] = useState<'month' | 'year' | 'unknown'>(parsedInitialMode);
 
   // Indexed Memory Dates
   const [availableMonths, setAvailableMonths] = useState<AvailableMonth[]>([]);
   const [availableYears, setAvailableYears] = useState<AvailableYear[]>([]);
+  const [unknownDateCount, setUnknownDateCount] = useState<number>(0);
   const [indexLoaded, setIndexLoaded] = useState<boolean>(false);
 
   // Active Selection
@@ -116,9 +121,11 @@ const Memories: React.FC = () => {
   useEffect(() => {
     const newParams = new URLSearchParams();
     newParams.set('mode', viewMode);
-    newParams.set('year', String(currentYear));
     if (viewMode === 'month') {
+      newParams.set('year', String(currentYear));
       newParams.set('month', MONTH_NAMES[currentMonth].toLowerCase());
+    } else if (viewMode === 'year') {
+      newParams.set('year', String(currentYear));
     }
     setSearchParams(newParams, { replace: true });
   }, [viewMode, currentYear, currentMonth, setSearchParams]);
@@ -292,7 +299,32 @@ const Memories: React.FC = () => {
       if (!isMounted.current) return;
 
       const dateFolders = tree.directories || [];
-      if (!dateFolders.length) {
+      let unknownCount = 0;
+
+      for (const folder of dateFolders) {
+        if (folder.name === 'Unknown-Date' || folder.name === 'Unknown') {
+          let count = typeof folder.itemCount === 'number' ? folder.itemCount : 0;
+          if (count === 0) {
+            const fTree = await piStorage.getDirectoryTree(folder.relativePath);
+            count = fTree?.files ? fTree.files.filter((f) => f.name && !f.name.startsWith('.')).length : 0;
+          }
+          unknownCount += count;
+          break;
+        }
+      }
+
+      if (unknownCount === 0) {
+        try {
+          const directTree = await piStorage.getDirectoryTree(`${userFolder}/Unknown-Date`);
+          if (directTree?.files) {
+            unknownCount = directTree.files.filter((f) => f.name && !f.name.startsWith('.')).length;
+          }
+        } catch (_) {}
+      }
+
+      setUnknownDateCount(unknownCount);
+
+      if (!dateFolders.length && unknownCount === 0) {
         setAvailableMonths([]);
         setAvailableYears([]);
         setIndexLoaded(true);
@@ -303,6 +335,7 @@ const Memories: React.FC = () => {
       const yearCounts: Record<number, number> = {};
 
       for (const folder of dateFolders) {
+        if (folder.name === 'Unknown-Date' || folder.name === 'Unknown') continue;
         if (!folder.name || !folder.name.match(/^\d{4}-\d{2}-\d{2}$/)) continue;
         const [yearStr, monthStr] = folder.name.split('-');
         const year = parseInt(yearStr, 10);
@@ -354,7 +387,7 @@ const Memories: React.FC = () => {
       setAvailableYears(yearsList);
       setIndexLoaded(true);
 
-      if (monthsList.length > 0) {
+      if (viewMode !== 'unknown' && monthsList.length > 0) {
         const currentKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
         const exists = monthsList.some((m) => m.key === currentKey);
         if (!exists) {
@@ -381,9 +414,12 @@ const Memories: React.FC = () => {
     let cacheKey = '';
     try {
       const userID = await GetUserID();
-      cacheKey = viewMode === 'month'
-        ? `journal_memories_cache_${userID}_month_${currentYear}_${currentMonth}`
-        : `journal_memories_cache_${userID}_year_${currentYear}`;
+      cacheKey =
+        viewMode === 'unknown'
+          ? `journal_memories_cache_${userID}_unknown`
+          : viewMode === 'month'
+          ? `journal_memories_cache_${userID}_month_${currentYear}_${currentMonth}`
+          : `journal_memories_cache_${userID}_year_${currentYear}`;
 
       // Always show loading spinner immediately on collection switch
       if (isMounted.current && fetchId === currentFetchId.current) {
@@ -421,6 +457,9 @@ const Memories: React.FC = () => {
 
       const dateFolders = tree.directories || [];
       const matchingFolders = dateFolders.filter((folder) => {
+        if (viewMode === 'unknown') {
+          return folder.name === 'Unknown-Date' || folder.name === 'Unknown';
+        }
         if (!folder.name || !folder.name.match(/^\d{4}-\d{2}-\d{2}$/)) return false;
         if (viewMode === 'month') return folder.name.startsWith(monthPrefix);
         return folder.name.startsWith(yearPrefix);
@@ -437,12 +476,32 @@ const Memories: React.FC = () => {
                 name: file.name,
                 url: piStorage.getFileUrl(file.viewUrl || file.relativePath),
                 thumbnail_url: piStorage.getThumbnailUrl(file.thumbnailUrl || file.relativePath),
-                date: folder.name,
+                date: 'Unknown-Date',
                 relativePath: file.relativePath,
               });
             }
           });
         }
+      }
+
+      // If viewing unknown photos and nothing found in directories array, query Unknown-Date directly
+      if (viewMode === 'unknown' && allPhotos.length === 0) {
+        try {
+          const directTree = await piStorage.getDirectoryTree(`${userFolder}/Unknown-Date`);
+          if (directTree && directTree.files) {
+            directTree.files.forEach((file) => {
+              if (file.name && !file.name.startsWith('.')) {
+                allPhotos.push({
+                  name: file.name,
+                  url: piStorage.getFileUrl(file.viewUrl || file.relativePath),
+                  thumbnail_url: piStorage.getThumbnailUrl(file.thumbnailUrl || file.relativePath),
+                  date: 'Unknown-Date',
+                  relativePath: file.relativePath,
+                });
+              }
+            });
+          }
+        } catch (_) {}
       }
 
       if (!isMounted.current || fetchId !== currentFetchId.current) return;
@@ -829,6 +888,13 @@ const Memories: React.FC = () => {
     setBatchFiles((prev) => prev.map((item) => ({ ...item, date: bulkDate, isOriginalDate: true })));
   };
 
+  // Set all selected items to Unknown Date
+  const handleSetAllUnknown = () => {
+    setBatchFiles((prev) =>
+      prev.map((item) => ({ ...item, date: 'Unknown-Date', isOriginalDate: true }))
+    );
+  };
+
   // Process Bulk Upload (Indiscriminate - saves for any date without requiring an entry)
   const processBatchUpload = async () => {
     if (batchFiles.length === 0) return;
@@ -860,8 +926,9 @@ const Memories: React.FC = () => {
       if (filesToUpload.length > 0) {
         const grouped: Record<string, File[]> = {};
         filesToUpload.forEach((item) => {
-          if (!grouped[item.date]) grouped[item.date] = [];
-          grouped[item.date].push(item.file);
+          const folderDate = item.date === 'Unknown' || item.date === 'Unknown-Date' ? 'Unknown-Date' : item.date;
+          if (!grouped[folderDate]) grouped[folderDate] = [];
+          grouped[folderDate].push(item.file);
         });
 
         const datesArr = Object.keys(grouped);
@@ -972,7 +1039,9 @@ const Memories: React.FC = () => {
   };
 
   const headerTitle =
-    viewMode === 'month'
+    viewMode === 'unknown'
+      ? 'Unknown Date'
+      : viewMode === 'month'
       ? `${MONTH_NAMES[currentMonth]} ${currentYear}`
       : `${currentYear}`;
 
@@ -992,24 +1061,29 @@ const Memories: React.FC = () => {
           <select
             className="memories-view-select"
             value={viewMode}
-            onChange={(e) => setViewMode(e.target.value as 'month' | 'year')}
+            onChange={(e) => setViewMode(e.target.value as 'month' | 'year' | 'unknown')}
           >
             <option value="month">View by Month</option>
             <option value="year">View by Year</option>
+            <option value="unknown">
+              Unknown Date{unknownDateCount > 0 ? ` (${unknownDateCount})` : ''}
+            </option>
           </select>
         </div>
 
         <div className="memories-header-center">
           <div className="month-navigator">
-            <button
-              type="button"
-              className="month-arrow-btn"
-              onClick={handlePrev}
-              disabled={!canPrev}
-              title={canPrev ? 'Previous Date with Memories' : 'No earlier dates with memories'}
-            >
-              <i className="fas fa-chevron-left"></i>
-            </button>
+            {viewMode !== 'unknown' && (
+              <button
+                type="button"
+                className="month-arrow-btn"
+                onClick={handlePrev}
+                disabled={!canPrev}
+                title={canPrev ? 'Previous Date with Memories' : 'No earlier dates with memories'}
+              >
+                <i className="fas fa-chevron-left"></i>
+              </button>
+            )}
 
             <h3
               className="month-title-clickable"
@@ -1020,18 +1094,27 @@ const Memories: React.FC = () => {
               }}
               title="Click to select date with memories"
             >
-              {headerTitle}
+              {viewMode === 'unknown' ? (
+                <>
+                  <i className="far fa-calendar-times me-2 text-warning"></i>
+                  {headerTitle}
+                </>
+              ) : (
+                headerTitle
+              )}
             </h3>
 
-            <button
-              type="button"
-              className="month-arrow-btn"
-              onClick={handleNext}
-              disabled={!canNext}
-              title={canNext ? 'Next Date with Memories' : 'No later dates with memories'}
-            >
-              <i className="fas fa-chevron-right"></i>
-            </button>
+            {viewMode !== 'unknown' && (
+              <button
+                type="button"
+                className="month-arrow-btn"
+                onClick={handleNext}
+                disabled={!canNext}
+                title={canNext ? 'Next Date with Memories' : 'No later dates with memories'}
+              >
+                <i className="fas fa-chevron-right"></i>
+              </button>
+            )}
           </div>
         </div>
 
@@ -1057,7 +1140,7 @@ const Memories: React.FC = () => {
       )}
 
       {/* Global Empty State */}
-      {!loading && availableMonths.length === 0 && (
+      {!loading && availableMonths.length === 0 && unknownDateCount === 0 && (
         <div className="memories-empty-state">
           <i className="fas fa-images fa-4x"></i>
           <h4>No memories found</h4>
@@ -1066,11 +1149,11 @@ const Memories: React.FC = () => {
       )}
 
       {/* Period Empty State */}
-      {!loading && availableMonths.length > 0 && photos.length === 0 && (
+      {!loading && (availableMonths.length > 0 || unknownDateCount > 0) && photos.length === 0 && (
         <div className="memories-empty-state">
           <i className="fas fa-images fa-4x"></i>
           <h4>No memories found for {headerTitle}</h4>
-          <p>Use the "Upload Memories" button above to add photos for this date!</p>
+          <p>Use the "Upload Memories" button above to add photos{viewMode === 'unknown' ? ' with an unknown date' : ' for this date'}!</p>
         </div>
       )}
 
@@ -1241,6 +1324,26 @@ const Memories: React.FC = () => {
                   })}
                 </div>
               )}
+
+              <div className="date-picker-divider">
+                <div
+                  className={`date-picker-item ${viewMode === 'unknown' ? 'active' : ''}`}
+                  onClick={() => {
+                    setViewMode('unknown');
+                    const closeBtn = datePickerModalRef.current?.querySelector(
+                      'button[data-mdb-dismiss="modal"]'
+                    ) as HTMLButtonElement;
+                    if (closeBtn) closeBtn.click();
+                  }}
+                >
+                  <span className="fw-bold text-white">
+                    <i className="far fa-calendar-times me-2 text-warning"></i>Unknown Date
+                  </span>
+                  <span className="badge bg-secondary rounded-pill">
+                    {unknownDateCount} photo{unknownDateCount === 1 ? '' : 's'}
+                  </span>
+                </div>
+              </div>
             </div>
             <div className="modal-footer">
               <button
@@ -1400,14 +1503,23 @@ const Memories: React.FC = () => {
                       >
                         Apply
                       </button>
+                      <button
+                        type="button"
+                        className="upload-batch-unknown-btn"
+                        onClick={handleSetAllUnknown}
+                        disabled={isUploading}
+                        title="Set date to 'Unknown' for all selected photos"
+                      >
+                        <i className="far fa-calendar-times me-1"></i>Set All Unknown
+                      </button>
                     </div>
                   </div>
 
-                  {batchFiles.some((item) => !item.isOriginalDate) && (
+                  {batchFiles.some((item) => !item.isOriginalDate && item.date !== 'Unknown-Date') && (
                     <div className="upload-untrusted-date-alert mb-3">
                       <i className="fas fa-triangle-exclamation text-warning me-2"></i>
                       <span>
-                        Some photos lack original capture metadata (<strong>DateTimeOriginal</strong> or <strong>CreateDate</strong>). We estimated their dates from file/filename info — please verify and adjust them manually.
+                        Some photos lack original capture metadata (<strong>DateTimeOriginal</strong> or <strong>CreateDate</strong>). We estimated their dates from file/filename info — please verify, set manually, or mark as <strong>Unknown</strong>.
                       </span>
                     </div>
                   )}
@@ -1422,14 +1534,21 @@ const Memories: React.FC = () => {
                             alt={item.file.name}
                             className="upload-card-thumb"
                           />
-                          {!item.isOriginalDate && (
+                          {item.date === 'Unknown-Date' ? (
+                            <span
+                              className="upload-card-unknown-badge"
+                              title="Marked as Unknown Date"
+                            >
+                              <i className="far fa-calendar-times me-1"></i>Unknown Date
+                            </span>
+                          ) : !item.isOriginalDate ? (
                             <span
                               className="upload-card-warning-badge"
-                              title="Date not from DateTimeOriginal or CreateDate. Please set manually."
+                              title="Date not from DateTimeOriginal or CreateDate. Please set manually or mark as Unknown."
                             >
                               <i className="fas fa-triangle-exclamation me-1"></i>Check date
                             </span>
-                          )}
+                          ) : null}
                           <button
                             type="button"
                             className="upload-card-remove-btn"
@@ -1449,34 +1568,73 @@ const Memories: React.FC = () => {
                             <span className="text-light opacity-75">{formatDateOrdinal(item.date)}</span>
                           </div>
                           <div className="upload-card-date-field">
-                            <div className="d-flex align-items-center justify-content-between mb-1">
-                              <label className="upload-card-date-label mb-0">
-                                <i className="far fa-calendar-alt text-primary"></i>Date (LA):
-                              </label>
-                              {!item.isOriginalDate && (
-                                <span
-                                  className="badge bg-warning text-dark py-0 px-1"
-                                  style={{ fontSize: '0.62rem' }}
-                                  title="Estimated date — please verify and change manually if incorrect"
-                                >
-                                  <i className="fas fa-triangle-exclamation me-1"></i>Check date
-                                </span>
-                              )}
-                            </div>
-                            <input
-                              type="date"
-                              className={`upload-card-date-input ${!item.isOriginalDate ? 'upload-card-date-input-warning' : ''}`}
-                              value={item.date}
-                              onChange={(e) => handleUpdateBatchFileDate(idx, e.target.value)}
-                              disabled={isUploading}
-                            />
-                            {!item.isOriginalDate && (
-                              <div
-                                className="upload-card-warning-text"
-                                title="Date not from original EXIF metadata (DateTimeOriginal or CreateDate). Set manually if incorrect."
-                              >
-                                <i className="fas fa-circle-exclamation text-warning"></i>
-                                <span>Estimated date — please set manually</span>
+                            {item.date === 'Unknown-Date' ? (
+                              <div>
+                                <div className="d-flex align-items-center justify-content-between mb-1">
+                                  <label className="upload-card-date-label mb-0">
+                                    <i className="far fa-calendar-alt text-primary"></i>Date (LA):
+                                  </label>
+                                  <button
+                                    type="button"
+                                    className="btn btn-link btn-sm p-0 text-primary text-decoration-none"
+                                    style={{ fontSize: '0.72rem' }}
+                                    onClick={() => handleUpdateBatchFileDate(idx, toLosAngelesDateString(new Date()))}
+                                    disabled={isUploading}
+                                  >
+                                    <i className="fas fa-calendar-day me-1"></i>Set Date
+                                  </button>
+                                </div>
+                                <div className="upload-card-unknown-box">
+                                  <span className="small text-white">
+                                    <i className="far fa-calendar-times text-warning me-1"></i>Unknown Date
+                                  </span>
+                                  <span className="badge bg-secondary" style={{ fontSize: '0.62rem' }}>Unknown-Date</span>
+                                </div>
+                              </div>
+                            ) : (
+                              <div>
+                                <div className="d-flex align-items-center justify-content-between mb-1">
+                                  <label className="upload-card-date-label mb-0">
+                                    <i className="far fa-calendar-alt text-primary"></i>Date (LA):
+                                  </label>
+                                  <div className="d-flex align-items-center gap-1">
+                                    {!item.isOriginalDate && (
+                                      <span
+                                        className="badge bg-warning text-dark py-0 px-1"
+                                        style={{ fontSize: '0.62rem' }}
+                                        title="Estimated date — please verify or mark as Unknown"
+                                      >
+                                        <i className="fas fa-triangle-exclamation me-1"></i>Check date
+                                      </span>
+                                    )}
+                                    <button
+                                      type="button"
+                                      className="btn btn-outline-secondary btn-sm py-0 px-1"
+                                      style={{ fontSize: '0.65rem' }}
+                                      onClick={() => handleUpdateBatchFileDate(idx, 'Unknown-Date')}
+                                      disabled={isUploading}
+                                      title="Mark this photo as having an Unknown Date"
+                                    >
+                                      Unknown
+                                    </button>
+                                  </div>
+                                </div>
+                                <input
+                                  type="date"
+                                  className={`upload-card-date-input ${!item.isOriginalDate ? 'upload-card-date-input-warning' : ''}`}
+                                  value={item.date}
+                                  onChange={(e) => handleUpdateBatchFileDate(idx, e.target.value)}
+                                  disabled={isUploading}
+                                />
+                                {!item.isOriginalDate && (
+                                  <div
+                                    className="upload-card-warning-text"
+                                    title="Date not from original EXIF metadata (DateTimeOriginal or CreateDate). Set manually or mark as Unknown."
+                                  >
+                                    <i className="fas fa-circle-exclamation text-warning"></i>
+                                    <span>Estimated date — verify or mark Unknown</span>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
