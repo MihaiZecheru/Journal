@@ -4,10 +4,11 @@ import { Modal } from 'mdb-ui-kit';
 import supabase from '../database/config/supabase';
 import { GetUserID } from '../database/GetUser';
 import fileDownload from 'js-file-download';
-import { getPhotoDate, formatDateOrdinal, toLosAngelesDateString } from '../utils/exifUtils';
+import { getPhotoDate, getPhotoDateDetails, formatDateOrdinal, toLosAngelesDateString } from '../utils/exifUtils';
 import { piStorage, PISTORAGE_CONSTRAINTS } from '../lib/pistorage';
 import { createBebShortUrl } from '../lib/beb';
 import ShortUrlModal from './ShortUrlModal';
+import UploadSuccessModal from './UploadSuccessModal';
 import Entry from '../database/Entry';
 import '../styles/memories.css';
 
@@ -24,6 +25,8 @@ interface BatchUploadItem {
   date: string;
   previewUrl: string;
   sizeFormatted: string;
+  isOriginalDate: boolean;
+  source?: string;
 }
 
 interface FailedUploadItem {
@@ -160,6 +163,10 @@ const Memories: React.FC = () => {
   const [shortUrlData, setShortUrlData] = useState<{ shortUrl: string | null; destinationUrl: string } | null>(null);
   const [shortUrlError, setShortUrlError] = useState<string | null>(null);
 
+  // Upload Success Modal State
+  const [uploadSuccessModalOpen, setUploadSuccessModalOpen] = useState<boolean>(false);
+  const [uploadSuccessMessage, setUploadSuccessMessage] = useState<string>('');
+
   // Modal Action Tooltip & Loading States
   const [modalTooltip, setModalTooltip] = useState<'copyImage' | 'copyUrl' | null>(null);
   const modalTooltipTimeoutRef = useRef<any>(null);
@@ -195,7 +202,9 @@ const Memories: React.FC = () => {
       } else if (e.key === 'ArrowRight') {
         setViewingPhotoIndex((prev) => (prev !== null && prev < photos.length - 1 ? prev + 1 : prev));
       } else if (e.key === 'Escape') {
-        if (shortUrlModalOpen) {
+        if (uploadSuccessModalOpen) {
+          setUploadSuccessModalOpen(false);
+        } else if (shortUrlModalOpen) {
           setShortUrlModalOpen(false);
         } else {
           setViewingPhotoIndex(null);
@@ -204,7 +213,7 @@ const Memories: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [viewingPhotoIndex, photos.length, shortUrlModalOpen]);
+  }, [viewingPhotoIndex, photos.length, shortUrlModalOpen, uploadSuccessModalOpen]);
 
   const isVideoFile = (filename: string) => {
     return /\.(mp4|mov|webm|avi|mkv)$/i.test(filename);
@@ -744,11 +753,18 @@ const Memories: React.FC = () => {
     const parsedList: BatchUploadItem[] = [];
 
     for (const file of files) {
-      const date = await getPhotoDate(file);
+      const details = await getPhotoDateDetails(file);
       const previewUrl = URL.createObjectURL(file);
       const sizeMB = file.size / (1024 * 1024);
       const sizeFormatted = sizeMB < 1 ? `${Math.round(file.size / 1024)} KB` : `${sizeMB.toFixed(1)} MB`;
-      parsedList.push({ file, date, previewUrl, sizeFormatted });
+      parsedList.push({
+        file,
+        date: details.date,
+        previewUrl,
+        sizeFormatted,
+        isOriginalDate: details.isOriginalDate,
+        source: details.source,
+      });
     }
 
     setBatchFiles((prev) => [...prev, ...parsedList]);
@@ -803,14 +819,14 @@ const Memories: React.FC = () => {
   // Update date for a single item in the batch upload preview
   const handleUpdateBatchFileDate = (index: number, newDate: string) => {
     setBatchFiles((prev) =>
-      prev.map((item, i) => (i === index ? { ...item, date: newDate } : item))
+      prev.map((item, i) => (i === index ? { ...item, date: newDate, isOriginalDate: true } : item))
     );
   };
 
   // Batch apply a date to all selected items
   const handleApplyBulkDate = () => {
     if (!bulkDate) return;
-    setBatchFiles((prev) => prev.map((item) => ({ ...item, date: bulkDate })));
+    setBatchFiles((prev) => prev.map((item) => ({ ...item, date: bulkDate, isOriginalDate: true })));
   };
 
   // Process Bulk Upload (Indiscriminate - saves for any date without requiring an entry)
@@ -899,11 +915,15 @@ const Memories: React.FC = () => {
       fetchPhotos();
 
       if (filesToUpload.length > 0 && newFailedUploads.length === 0) {
-        alert(`Successfully uploaded ${uploadedSuccessCount} memory photo(s)!`);
         const closeBtn = uploadModalRef.current?.querySelector(
           'button[data-mdb-dismiss="modal"]'
         ) as HTMLButtonElement;
         if (closeBtn) closeBtn.click();
+
+        setUploadSuccessMessage(
+          `Successfully uploaded ${uploadedSuccessCount} memory photo${uploadedSuccessCount === 1 ? '' : 's'}!`
+        );
+        setUploadSuccessModalOpen(true);
       }
     } catch (err: any) {
       alert(`Upload failed: ${err.message || err}`);
@@ -931,8 +951,18 @@ const Memories: React.FC = () => {
       }
 
       clearMemoriesCache();
-      setFailedUploads((prev) => prev.filter((item) => item.id !== failedItem.id));
-      alert(`Successfully uploaded memory for ${failedItem.formattedDate}!`);
+      const remainingFailed = failedUploads.filter((item) => item.id !== failedItem.id);
+      setFailedUploads(remainingFailed);
+
+      if (remainingFailed.length === 0) {
+        const closeBtn = uploadModalRef.current?.querySelector(
+          'button[data-mdb-dismiss="modal"]'
+        ) as HTMLButtonElement;
+        if (closeBtn) closeBtn.click();
+      }
+
+      setUploadSuccessMessage(`Successfully uploaded memory for ${failedItem.formattedDate}!`);
+      setUploadSuccessModalOpen(true);
 
       await refreshMemoryIndex();
       fetchPhotos();
@@ -1373,6 +1403,15 @@ const Memories: React.FC = () => {
                     </div>
                   </div>
 
+                  {batchFiles.some((item) => !item.isOriginalDate) && (
+                    <div className="upload-untrusted-date-alert mb-3">
+                      <i className="fas fa-triangle-exclamation text-warning me-2"></i>
+                      <span>
+                        Some photos lack original capture metadata (<strong>DateTimeOriginal</strong> or <strong>CreateDate</strong>). We estimated their dates from file/filename info — please verify and adjust them manually.
+                      </span>
+                    </div>
+                  )}
+
                   {/* Cards Grid */}
                   <div className="upload-preview-grid">
                     {batchFiles.map((item, idx) => (
@@ -1383,6 +1422,14 @@ const Memories: React.FC = () => {
                             alt={item.file.name}
                             className="upload-card-thumb"
                           />
+                          {!item.isOriginalDate && (
+                            <span
+                              className="upload-card-warning-badge"
+                              title="Date not from DateTimeOriginal or CreateDate. Please set manually."
+                            >
+                              <i className="fas fa-triangle-exclamation me-1"></i>Check date
+                            </span>
+                          )}
                           <button
                             type="button"
                             className="upload-card-remove-btn"
@@ -1402,16 +1449,36 @@ const Memories: React.FC = () => {
                             <span className="text-light opacity-75">{formatDateOrdinal(item.date)}</span>
                           </div>
                           <div className="upload-card-date-field">
-                            <label className="upload-card-date-label">
-                              <i className="far fa-calendar-alt text-primary"></i>Date (LA):
-                            </label>
+                            <div className="d-flex align-items-center justify-content-between mb-1">
+                              <label className="upload-card-date-label mb-0">
+                                <i className="far fa-calendar-alt text-primary"></i>Date (LA):
+                              </label>
+                              {!item.isOriginalDate && (
+                                <span
+                                  className="badge bg-warning text-dark py-0 px-1"
+                                  style={{ fontSize: '0.62rem' }}
+                                  title="Estimated date — please verify and change manually if incorrect"
+                                >
+                                  <i className="fas fa-triangle-exclamation me-1"></i>Check date
+                                </span>
+                              )}
+                            </div>
                             <input
                               type="date"
-                              className="upload-card-date-input"
+                              className={`upload-card-date-input ${!item.isOriginalDate ? 'upload-card-date-input-warning' : ''}`}
                               value={item.date}
                               onChange={(e) => handleUpdateBatchFileDate(idx, e.target.value)}
                               disabled={isUploading}
                             />
+                            {!item.isOriginalDate && (
+                              <div
+                                className="upload-card-warning-text"
+                                title="Date not from original EXIF metadata (DateTimeOriginal or CreateDate). Set manually if incorrect."
+                              >
+                                <i className="fas fa-circle-exclamation text-warning"></i>
+                                <span>Estimated date — please set manually</span>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1702,6 +1769,14 @@ const Memories: React.FC = () => {
         destinationLabel="DESTINATION SIGNED URL"
         destinationFallbackLabel="FULL IMAGE URL"
         destinationExpiryText="Expires in 1 week"
+      />
+
+      {/* Upload Success Modal */}
+      <UploadSuccessModal
+        isOpen={uploadSuccessModalOpen}
+        onClose={() => setUploadSuccessModalOpen(false)}
+        title="Successfully Uploaded"
+        message={uploadSuccessMessage}
       />
     </div>
   );

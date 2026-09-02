@@ -588,6 +588,49 @@
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25) !important;
 }
 
+.upload-card-date-input-warning {
+  border-color: #f59e0b !important;
+}
+
+.upload-card-warning-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  background: rgba(245, 158, 11, 0.95);
+  color: #0f172a;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  z-index: 2;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+  letter-spacing: 0.02em;
+}
+
+.upload-card-warning-text {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.68rem;
+  color: #fbbf24;
+  margin-top: 4px;
+  line-height: 1.25;
+}
+
+.upload-untrusted-date-alert {
+  display: flex;
+  align-items: center;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: #fde68a;
+  font-size: 0.78rem;
+}
+
+
 /* ─── Failed Uploads Section ───────────────────────────────────────── */
 .failed-uploads-container {
   border: 1px solid #7f1d1d;

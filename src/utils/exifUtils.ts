@@ -21,45 +21,159 @@ export function toLosAngelesDateString(date: Date): string {
   }
 }
 
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const FULL_MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
+
 /**
- * Extracts the photo creation/capture date from EXIF metadata, filename patterns,
- * or file modification timestamp, strictly normalized to America/Los_Angeles (US Pacific Time).
- * Returns date in 'YYYY-MM-DD' format.
+ * Parses date string from an EXIF tag and adjusts for timezone offset if present.
  */
-export async function getPhotoDate(file: File): Promise<string> {
+function parseExifDateTag(
+  dateTag: any,
+  tags: Record<string, any>,
+  specificOffsetKeys: string[] = []
+): string | null {
+  if (!dateTag) return null;
+  const rawVal = dateTag.description || dateTag.value;
+  const dateStr = Array.isArray(rawVal) ? rawVal.join('') : String(rawVal || '').trim();
+  if (!dateStr) return null;
+
+  // Check if timezone offset is also provided
+  let offsetTag: any = null;
+  for (const key of specificOffsetKeys) {
+    if (tags[key]) {
+      offsetTag = tags[key];
+      break;
+    }
+  }
+  if (!offsetTag) {
+    offsetTag = tags['OffsetTimeOriginal'] || tags['OffsetTime'] || tags['OffsetTimeDigitized'];
+  }
+  const offsetStr = offsetTag ? String(offsetTag.description || offsetTag.value || '').trim() : '';
+
+  // Pattern: "YYYY:MM:DD HH:MM:SS" or "YYYY-MM-DD HH:MM:SS"
+  const matchWithTime = dateStr.match(/^(\d{4})[:\-/](\d{2})[:\-/](\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+  if (matchWithTime && offsetStr && /^[+-]\d{2}:\d{2}$/.test(offsetStr)) {
+    const [, yr, mo, da, hr, mi, se] = matchWithTime;
+    const isoWithOffset = `${yr}-${mo}-${da}T${hr}:${mi}:${se}${offsetStr}`;
+    const parsedDate = new Date(isoWithOffset);
+    if (!isNaN(parsedDate.getTime())) {
+      return toLosAngelesDateString(parsedDate);
+    }
+  }
+
+  const match = dateStr.match(/^(\d{4})[:\-/](\d{2})[:\-/](\d{2})/);
+  if (match) {
+    const [, year, month, day] = match;
+    return `${year}-${month}-${day}`;
+  }
+
+  return null;
+}
+
+/**
+ * Tries parsing date patterns from a file name.
+ */
+export function parseDateFromFilename(fileName: string): string | null {
+  if (!fileName) return null;
+
+  // Check YYYY-MM-DD or YYYY_MM_DD
+  const isoMatch = fileName.match(/(\d{4})[-_](\d{2})[-_](\d{2})/);
+  if (isoMatch) {
+    const [, year, month, day] = isoMatch;
+    const mNum = parseInt(month, 10);
+    const dNum = parseInt(day, 10);
+    if (mNum >= 1 && mNum <= 12 && dNum >= 1 && dNum <= 31) {
+      return `${year}-${month}-${day}`;
+    }
+  }
+
+  // Check compact YYYYMMDD (e.g., IMG_20260823_142000 or 20260823)
+  const compactMatch = fileName.match(/(?:IMG_|PXL_|VID_)?(\d{4})(\d{2})(\d{2})/);
+  if (compactMatch) {
+    const [, year, month, day] = compactMatch;
+    const yNum = parseInt(year, 10);
+    const mNum = parseInt(month, 10);
+    const dNum = parseInt(day, 10);
+    if (yNum >= 2000 && yNum <= 2100 && mNum >= 1 && mNum <= 12 && dNum >= 1 && dNum <= 31) {
+      return `${year}-${month}-${day}`;
+    }
+  }
+
+  // Check Month-DD-YYYY or Month DD YYYY (e.g., Aug-23-2026)
+  const mmmMatch = fileName.match(/([a-zA-Z]{3,9})[-_\s](\d{1,2})[-_\s](\d{4})/);
+  if (mmmMatch) {
+    const [, monthStr, dayStr, yearStr] = mmmMatch;
+    const mLower = monthStr.toLowerCase();
+    const mIdx = MONTH_NAMES.findIndex((m) => m.toLowerCase().startsWith(mLower.substring(0, 3)));
+    if (mIdx !== -1) {
+      const monthFormatted = String(mIdx + 1).padStart(2, '0');
+      const dayFormatted = String(parseInt(dayStr, 10)).padStart(2, '0');
+      return `${yearStr}-${monthFormatted}-${dayFormatted}`;
+    }
+  }
+
+  return null;
+}
+
+export type PhotoDateSource =
+  | 'DateTimeOriginal'
+  | 'CreateDate'
+  | 'DateTimeDigitized'
+  | 'DateTime'
+  | 'DateCreated'
+  | 'filename'
+  | 'lastModified';
+
+export interface PhotoDateResult {
+  date: string;
+  /**
+   * True strictly if the date was read from DateTimeOriginal or CreateDate.
+   * False if fallback EXIF tags, filename heuristics, or lastModified timestamp were used.
+   */
+  isOriginalDate: boolean;
+  source: PhotoDateSource;
+}
+
+/**
+ * Extracts photo creation/capture date along with metadata about whether it came from
+ * camera capture tags (DateTimeOriginal / CreateDate) or fallback sources.
+ */
+export async function getPhotoDateDetails(file: File): Promise<PhotoDateResult> {
   // 1. Try reading EXIF metadata
   try {
-    const tags = await ExifReader.load(file);
-    const dateTag =
-      tags['DateTimeOriginal'] ||
-      tags['CreateDate'] ||
-      tags['DateTimeDigitized'] ||
-      tags['DateTime'] ||
-      tags['DateCreated'];
+    const tags = (await ExifReader.load(file)) as Record<string, any>;
 
-    if (dateTag) {
-      const rawVal = dateTag.description || dateTag.value;
-      const dateStr = Array.isArray(rawVal) ? rawVal.join('') : String(rawVal || '').trim();
-
-      // Check if timezone offset is also provided
-      const offsetTag = tags['OffsetTimeOriginal'] || tags['OffsetTime'] || tags['OffsetTimeDigitized'];
-      const offsetStr = offsetTag ? String(offsetTag.description || offsetTag.value || '').trim() : '';
-
-      // Pattern: "YYYY:MM:DD HH:MM:SS" or "YYYY-MM-DD HH:MM:SS"
-      const matchWithTime = dateStr.match(/^(\d{4})[:\-/](\d{2})[:\-/](\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
-      if (matchWithTime && offsetStr && /^[+-]\d{2}:\d{2}$/.test(offsetStr)) {
-        const [, yr, mo, da, hr, mi, se] = matchWithTime;
-        const isoWithOffset = `${yr}-${mo}-${da}T${hr}:${mi}:${se}${offsetStr}`;
-        const parsedDate = new Date(isoWithOffset);
-        if (!isNaN(parsedDate.getTime())) {
-          return toLosAngelesDateString(parsedDate);
-        }
+    // Priority 1: DateTimeOriginal (exact camera capture date/time)
+    if (tags['DateTimeOriginal']) {
+      const parsed = parseExifDateTag(tags['DateTimeOriginal'], tags, ['OffsetTimeOriginal', 'OffsetTime']);
+      if (parsed) {
+        return { date: parsed, isOriginalDate: true, source: 'DateTimeOriginal' };
       }
+    }
 
-      const match = dateStr.match(/^(\d{4})[:\-/](\d{2})[:\-/](\d{2})/);
-      if (match) {
-        const [, year, month, day] = match;
-        return `${year}-${month}-${day}`;
+    // Priority 2: CreateDate (exact digital creation date)
+    if (tags['CreateDate']) {
+      const parsed = parseExifDateTag(tags['CreateDate'], tags, ['OffsetTimeOriginal', 'OffsetTime']);
+      if (parsed) {
+        return { date: parsed, isOriginalDate: true, source: 'CreateDate' };
+      }
+    }
+
+    // Priority 3: Fallback EXIF tags (Digitized, Modification DateTime, IPTC DateCreated)
+    const fallbackExifKeys: Array<'DateTimeDigitized' | 'DateTime' | 'DateCreated'> = [
+      'DateTimeDigitized',
+      'DateTime',
+      'DateCreated',
+    ];
+    for (const key of fallbackExifKeys) {
+      if (tags[key]) {
+        const parsed = parseExifDateTag(tags[key], tags);
+        if (parsed) {
+          return { date: parsed, isOriginalDate: false, source: key };
+        }
       }
     }
   } catch (err) {
@@ -68,52 +182,29 @@ export async function getPhotoDate(file: File): Promise<string> {
 
   // 2. Try parsing date from filename
   if (file.name) {
-    // Check YYYY-MM-DD or YYYY_MM_DD
-    const isoMatch = file.name.match(/(\d{4})[-_](\d{2})[-_](\d{2})/);
-    if (isoMatch) {
-      const [, year, month, day] = isoMatch;
-      const mNum = parseInt(month, 10);
-      const dNum = parseInt(day, 10);
-      if (mNum >= 1 && mNum <= 12 && dNum >= 1 && dNum <= 31) {
-        return `${year}-${month}-${day}`;
-      }
-    }
-
-    // Check compact YYYYMMDD (e.g., IMG_20260823_142000 or 20260823)
-    const compactMatch = file.name.match(/(?:IMG_|PXL_|VID_)?(\d{4})(\d{2})(\d{2})/);
-    if (compactMatch) {
-      const [, year, month, day] = compactMatch;
-      const yNum = parseInt(year, 10);
-      const mNum = parseInt(month, 10);
-      const dNum = parseInt(day, 10);
-      if (yNum >= 2000 && yNum <= 2100 && mNum >= 1 && mNum <= 12 && dNum >= 1 && dNum <= 31) {
-        return `${year}-${month}-${day}`;
-      }
-    }
-
-    // Check Month-DD-YYYY or Month DD YYYY (e.g., Aug-23-2026)
-    const mmmMatch = file.name.match(/([a-zA-Z]{3,9})[-_\s](\d{1,2})[-_\s](\d{4})/);
-    if (mmmMatch) {
-      const [, monthStr, dayStr, yearStr] = mmmMatch;
-      const mLower = monthStr.toLowerCase();
-      const mIdx = MONTH_NAMES.findIndex((m) => m.toLowerCase().startsWith(mLower.substring(0, 3)));
-      if (mIdx !== -1) {
-        const monthFormatted = String(mIdx + 1).padStart(2, '0');
-        const dayFormatted = String(parseInt(dayStr, 10)).padStart(2, '0');
-        return `${yearStr}-${monthFormatted}-${dayFormatted}`;
-      }
+    const filenameDate = parseDateFromFilename(file.name);
+    if (filenameDate) {
+      return { date: filenameDate, isOriginalDate: false, source: 'filename' };
     }
   }
 
   // 3. Fallback to file modification timestamp, strictly converted to America/Los_Angeles
-  return toLosAngelesDateString(new Date(file.lastModified));
+  return {
+    date: toLosAngelesDateString(new Date(file.lastModified)),
+    isOriginalDate: false,
+    source: 'lastModified',
+  };
 }
 
-const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const FULL_MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'
-];
+/**
+ * Extracts the photo creation/capture date from EXIF metadata, filename patterns,
+ * or file modification timestamp, strictly normalized to America/Los_Angeles (US Pacific Time).
+ * Returns date in 'YYYY-MM-DD' format.
+ */
+export async function getPhotoDate(file: File): Promise<string> {
+  const result = await getPhotoDateDetails(file);
+  return result.date;
+}
 
 /**
  * Converts a YYYY-MM-DD date string to MMM-DD-YYYY format (e.g., '2026-08-23' -> 'Aug-23-2026')

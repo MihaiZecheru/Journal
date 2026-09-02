@@ -1,4 +1,15 @@
-import { formatDateForFileName, formatDateOrdinal, generateMemoriesFileName } from './exifUtils';
+import {
+  formatDateForFileName,
+  formatDateOrdinal,
+  generateMemoriesFileName,
+  parseDateFromFilename,
+  getPhotoDateDetails,
+} from './exifUtils';
+import ExifReader from 'exifreader';
+
+jest.mock('exifreader', () => ({
+  load: jest.fn(),
+}));
 
 describe('exifUtils file naming & date formatting tests', () => {
   test('formatDateForFileName formats YYYY-MM-DD to MMM-DD-YYYY', () => {
@@ -33,5 +44,61 @@ describe('exifUtils file naming & date formatting tests', () => {
     // When 3 pictures already exist on that date
     const name3 = generateMemoriesFileName(userID, dateStr, 3, 1, 'camera.heic');
     expect(name3).toBe('fe9f8d37-7849-4721-8ea1-1c192486b942_Aug-23-2026_0004.heic');
+  });
+
+  test('parseDateFromFilename correctly extracts dates from various filename patterns', () => {
+    expect(parseDateFromFilename('pool-2024-07-15.jpg')).toBe('2024-07-15');
+    expect(parseDateFromFilename('IMG_20230820_142300.jpg')).toBe('2023-08-20');
+    expect(parseDateFromFilename('Aug-23-2024_0001.jpg')).toBe('2024-08-23');
+    expect(parseDateFromFilename('random_picture.png')).toBeNull();
+  });
+
+  test('getPhotoDateDetails marks isOriginalDate=true strictly for DateTimeOriginal or CreateDate', async () => {
+    const mockLoad = ExifReader.load as jest.Mock;
+
+    // Case 1: DateTimeOriginal present -> isOriginalDate = true
+    mockLoad.mockResolvedValueOnce({
+      DateTimeOriginal: { description: '2024:07:15 14:30:00' },
+    });
+    const file1 = new File([''], 'pool.jpg', { lastModified: 1725200000000 });
+    const res1 = await getPhotoDateDetails(file1);
+    expect(res1.isOriginalDate).toBe(true);
+    expect(res1.date).toBe('2024-07-15');
+    expect(res1.source).toBe('DateTimeOriginal');
+
+    // Case 2: CreateDate present -> isOriginalDate = true
+    mockLoad.mockResolvedValueOnce({
+      CreateDate: { description: '2024:06:10 11:00:00' },
+    });
+    const file2 = new File([''], 'vacation.jpg', { lastModified: 1725200000000 });
+    const res2 = await getPhotoDateDetails(file2);
+    expect(res2.isOriginalDate).toBe(true);
+    expect(res2.date).toBe('2024-06-10');
+    expect(res2.source).toBe('CreateDate');
+
+    // Case 3: Only DateTime (modification date) present -> isOriginalDate = false
+    mockLoad.mockResolvedValueOnce({
+      DateTime: { description: '2026:09:01 10:00:00' },
+    });
+    const file3 = new File([''], 'edited_photo.jpg', { lastModified: 1725200000000 });
+    const res3 = await getPhotoDateDetails(file3);
+    expect(res3.isOriginalDate).toBe(false);
+    expect(res3.date).toBe('2026-09-01');
+    expect(res3.source).toBe('DateTime');
+
+    // Case 4: No EXIF, date parsed from filename -> isOriginalDate = false
+    mockLoad.mockResolvedValueOnce({});
+    const file4 = new File([''], 'IMG_20230820_120000.jpg', { lastModified: 1725200000000 });
+    const res4 = await getPhotoDateDetails(file4);
+    expect(res4.isOriginalDate).toBe(false);
+    expect(res4.date).toBe('2023-08-20');
+    expect(res4.source).toBe('filename');
+
+    // Case 5: No EXIF, no date in filename -> falls back to lastModified with isOriginalDate = false
+    mockLoad.mockResolvedValueOnce({});
+    const file5 = new File([''], 'me_at_pool.jpg', { lastModified: 1700000000000 });
+    const res5 = await getPhotoDateDetails(file5);
+    expect(res5.isOriginalDate).toBe(false);
+    expect(res5.source).toBe('lastModified');
   });
 });

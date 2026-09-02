@@ -18,11 +18,12 @@ import { useNavigate } from 'react-router-dom';
 import fileDownload from 'js-file-download'
 import { UserID } from '../database/ID';
 import { createShareLink } from '../database/createShareLink';
-import { getPhotoDate, toLosAngelesDateString } from '../utils/exifUtils';
+import { getPhotoDate, getPhotoDateDetails, toLosAngelesDateString } from '../utils/exifUtils';
 import { piStorage } from '../lib/pistorage';
 import { getPendingSharedPhotos, clearSharedPhotos } from '../utils/sharedPhotosDb';
 import { createBebShortUrl } from '../lib/beb';
 import ShortUrlModal from './ShortUrlModal';
+import UploadSuccessModal from './UploadSuccessModal';
 
 function mobileCheck() {
   let check = false;
@@ -141,6 +142,10 @@ const Home = () => {
   const [shortUrlError, setShortUrlError] = useState<string | null>(null);
   const shortUrlCache = useRef<Record<string, string>>({});
 
+  // Upload success modal state
+  const [uploadSuccessModalOpen, setUploadSuccessModalOpen] = useState<boolean>(false);
+  const [uploadSuccessMessage, setUploadSuccessMessage] = useState<string>('');
+
   const handleShareEntry = async (
     getDetails: () => { title: string; content: string } | null,
     cacheRef: React.MutableRefObject<{ url: string; time: number } | null>,
@@ -246,19 +251,19 @@ const Home = () => {
   
   // Upload memories modal
   const uploadMemoriesModal = useRef<HTMLDivElement>(null);
-  const [batchFiles, setBatchFiles] = useState<{ file: File; date: string; previewUrl: string }[]>([]);
+  const [batchFiles, setBatchFiles] = useState<{ file: File; date: string; previewUrl: string; isOriginalDate: boolean }[]>([]);
   const [isUploadingBatch, setIsUploadingBatch] = useState<boolean>(false);
   const [batchUploadStatus, setBatchUploadStatus] = useState<string>('');
 
   const handleBatchFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const filesArray = Array.from(e.target.files);
-    const parsedFiles: { file: File; date: string; previewUrl: string }[] = [];
+    const parsedFiles: { file: File; date: string; previewUrl: string; isOriginalDate: boolean }[] = [];
 
     for (const file of filesArray) {
-      const date = await getPhotoDate(file);
+      const details = await getPhotoDateDetails(file);
       const previewUrl = URL.createObjectURL(file);
-      parsedFiles.push({ file, date, previewUrl });
+      parsedFiles.push({ file, date: details.date, previewUrl, isOriginalDate: details.isOriginalDate });
     }
 
     setBatchFiles((prev) => [...prev, ...parsedFiles]);
@@ -299,14 +304,13 @@ const Home = () => {
         }
       }
 
-      setBatchUploadStatus(`Successfully uploaded ${totalUploaded} memory photo(s)!`);
-      setTimeout(() => {
-        setBatchFiles([]);
-        setIsUploadingBatch(false);
-        setBatchUploadStatus('');
-        const closeBtn = uploadMemoriesModal.current?.querySelector('button[data-mdb-dismiss="modal"]') as HTMLButtonElement;
-        if (closeBtn) closeBtn.click();
-      }, 1500);
+      const closeBtn = uploadMemoriesModal.current?.querySelector('button[data-mdb-dismiss="modal"]') as HTMLButtonElement;
+      if (closeBtn) closeBtn.click();
+      setBatchFiles([]);
+      setIsUploadingBatch(false);
+      setBatchUploadStatus('');
+      setUploadSuccessMessage(`Successfully uploaded ${totalUploaded} memory photo${totalUploaded === 1 ? '' : 's'}!`);
+      setUploadSuccessModalOpen(true);
     } catch (err: any) {
       console.error('Error processing batch upload:', err);
       alert(`Upload error: ${err.message || err}`);
@@ -351,7 +355,8 @@ const Home = () => {
       }
 
       if (uploadedCount > 0) {
-        alert(`Added ${uploadedCount} shared photo(s) to Memories!`);
+        setUploadSuccessMessage(`Added ${uploadedCount} shared photo${uploadedCount === 1 ? '' : 's'} to Memories!`);
+        setUploadSuccessModalOpen(true);
       }
     } catch (err) {
       console.error('Error processing shared photos:', err);
@@ -1469,16 +1474,57 @@ const Home = () => {
               { batchFiles.length > 0 && (
                 <div className="batch-preview-container">
                   <h6 className="mb-2">Selected Photos ({ batchFiles.length }):</h6>
+
+                  { batchFiles.some((f) => !f.isOriginalDate) && (
+                    <div className="alert alert-warning py-1 px-2 mb-2 d-flex align-items-center gap-2" style={{ fontSize: '0.75rem' }}>
+                      <i className="fas fa-triangle-exclamation text-warning"></i>
+                      <span>Some photos lack original capture metadata (<strong>DateTimeOriginal</strong> or <strong>CreateDate</strong>). Please verify dates before uploading.</span>
+                    </div>
+                  ) }
+
                   <div className="batch-preview-grid d-flex flex-wrap gap-2 mb-3" style={{ maxHeight: '300px', overflowY: 'auto' }}>
                     { batchFiles.map((item, idx) => (
-                      <div key={ idx } className="position-relative border rounded p-1" style={{ width: '110px' }}>
-                        <img src={ item.previewUrl } alt="preview" className="img-thumbnail w-100" style={{ height: '75px', objectFit: 'cover' }} />
-                        <div className="small text-truncate text-center mt-1" title={ item.date }>
-                          <span className="badge bg-primary">{ item.date }</span>
+                      <div key={ idx } className="position-relative border rounded p-1" style={{ width: '125px' }}>
+                        <div className="position-relative">
+                          <img src={ item.previewUrl } alt="preview" className="img-thumbnail w-100" style={{ height: '75px', objectFit: 'cover' }} />
+                          { !item.isOriginalDate && (
+                            <span
+                              className="position-absolute top-0 start-0 m-1 badge bg-warning text-dark"
+                              style={{ fontSize: '0.6rem', zIndex: 1, padding: '2px 4px' }}
+                              title="Date not found in original EXIF capture metadata (DateTimeOriginal or CreateDate). Please set manually."
+                            >
+                              <i className="fas fa-triangle-exclamation me-1"></i>Check date
+                            </span>
+                          ) }
+                          <button type="button" className="btn-close position-absolute top-0 end-0 bg-white rounded-circle p-1" aria-label="Remove" onClick={() => {
+                            setBatchFiles(batchFiles.filter((_, i) => i !== idx));
+                          }}></button>
                         </div>
-                        <button type="button" className="btn-close position-absolute top-0 end-0 bg-white rounded-circle p-1" aria-label="Remove" onClick={() => {
-                          setBatchFiles(batchFiles.filter((_, i) => i !== idx));
-                        }}></button>
+                        <div className="mt-1">
+                          <input
+                            type="date"
+                            className={`form-control form-control-sm p-0 px-1 text-center ${!item.isOriginalDate ? 'border-warning' : ''}`}
+                            style={{ fontSize: '0.72rem', height: '24px' }}
+                            value={item.date}
+                            onChange={(e) => {
+                              const newDate = e.target.value;
+                              setBatchFiles((prev) =>
+                                prev.map((f, i) => (i === idx ? { ...f, date: newDate, isOriginalDate: true } : f))
+                              );
+                            }}
+                            disabled={isUploadingBatch}
+                          />
+                          { !item.isOriginalDate && (
+                            <div
+                              className="text-warning text-center mt-1 d-flex align-items-center justify-content-center gap-1"
+                              style={{ fontSize: '0.64rem', lineHeight: '1.1' }}
+                              title="Estimated date: not from camera capture EXIF. Please set manually."
+                            >
+                              <i className="fas fa-triangle-exclamation"></i>
+                              <span>Check date</span>
+                            </div>
+                          ) }
+                        </div>
                       </div>
                     )) }
                   </div>
@@ -1518,6 +1564,14 @@ const Home = () => {
         destinationLabel="DESTINATION SHARE URL"
         destinationFallbackLabel="FULL SHARE URL"
         destinationExpiryText="Expires in 24 hours"
+      />
+
+      {/* Upload Success Modal */}
+      <UploadSuccessModal
+        isOpen={uploadSuccessModalOpen}
+        onClose={() => setUploadSuccessModalOpen(false)}
+        title="Successfully Uploaded"
+        message={uploadSuccessMessage}
       />
 
     </div>

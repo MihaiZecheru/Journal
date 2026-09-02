@@ -68,6 +68,49 @@ function filterEntriesByKeywords(entries: Entry[], keywords: string[]): Entry[] 
   );
 }
 
+function sanitizeKeywords(keywords: string[]): string[] {
+  const timeWordSet = new Set([
+    ...MONTH_NAMES,
+    ...WEEKDAY_NAMES,
+    ...Object.keys(SEASONS),
+    'year', 'years', 'month', 'months', 'week', 'weeks', 'day', 'days',
+    'today', 'yesterday', 'tomorrow', 'recently', 'lately'
+  ]);
+  return keywords
+    .map(k => k.trim().toLowerCase())
+    .filter(k => k.length > 1 && !timeWordSet.has(k) && !/^\d{4}$/.test(k) && !/^'?\d{2}$/.test(k));
+}
+
+function hasTopicBeyondTime(question: string): boolean {
+  let q = question.toLowerCase();
+
+  // Strip 4-digit years (e.g. 2025) and 2-digit years (e.g. '25)
+  q = q.replace(/\b20\d{2}\b/g, '').replace(/\b'\d{2}\b/g, '');
+
+  for (const m of MONTH_NAMES) q = q.replaceAll(m, '');
+  for (const w of WEEKDAY_NAMES) q = q.replaceAll(w, '');
+  for (const s of Object.keys(SEASONS)) q = q.replaceAll(s, '');
+
+  const stopWords = new Set([
+    'this', 'last', 'next', 'year', 'years', 'month', 'months', 'week', 'weeks', 'day', 'days',
+    'in', 'during', 'for', 'at', 'on', 'the', 'a', 'an', 'and', 'or', 'to', 'of', 'from', 'all',
+    'what', 'how', 'when', 'where', 'who', 'why', 'did', 'do', 'does', 'doing', 'was', 'were', 'is', 'are',
+    'have', 'had', 'has', 'having',
+    'i', 'me', 'my', 'myself', 'we', 'us', 'our', 'you', 'your',
+    'summarize', 'summary', 'recap', 'overview', 'highlight', 'highlights', 'happened', 'happen', 'tell', 'about',
+    'give', 'show', 'list', 'entry', 'entries', 'many', 'much', 'often', 'times', 'time'
+  ]);
+
+  const remainingTokens = q
+    .replace(/[^\w\s]/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(w => w.length > 1 && !stopWords.has(w));
+
+  return remainingTokens.length > 0;
+}
+
+
 async function runAiSearch(question: string, entries: Entry[], signal: AbortSignal): Promise<string> {
   const timeoutController = new AbortController();
   const timeoutId = setTimeout(() => timeoutController.abort(), 120_000);
@@ -410,24 +453,36 @@ const Search = () => {
         const controller = new AbortController();
         abortControllerRef.current = controller;
         try {
+          const MAX_ENTRIES = 730;
           let relevant: Entry[];
           const timeFiltered = getTimeFilteredEntries(question, allEntries!);
+          const hasTime = timeFiltered !== null && timeFiltered.length > 0;
+          const hasTopic = hasTopicBeyondTime(question);
 
-          const MAX_ENTRIES = 100;
-
-          if (timeFiltered !== null && timeFiltered.length > 0) {
-            // Skip keyword expansion — send all entries for that period directly
+          if (hasTime && !hasTopic) {
+            // Pure time query (e.g. "what did I do in 2025", "summarize last week")
             progressCeilingRef.current = 95;
             relevant = timeFiltered.length > MAX_ENTRIES
               ? (preferNewer ? timeFiltered.slice(-MAX_ENTRIES) : timeFiltered.slice(0, MAX_ENTRIES))
               : timeFiltered;
           } else {
-            const keywords = await expandSearchKeywords(question, controller.signal);
+            // Topic query (e.g. "how many times did I go to the gym in 2025", "when did I last visit the dentist")
+            const rawKeywords = await expandSearchKeywords(question, controller.signal);
             setAiProgress(42);
             progressCeilingRef.current = 95;
-            let filtered = filterEntriesByKeywords(allEntries!, keywords);
-            if (filtered.length === 0) filtered = allEntries!.slice(-30);
-            relevant = preferNewer ? filtered.slice(-MAX_ENTRIES) : filtered.slice(0, MAX_ENTRIES);
+
+            const keywords = sanitizeKeywords(rawKeywords);
+            const pool = hasTime ? timeFiltered : allEntries!;
+            let filtered = keywords.length > 0 ? filterEntriesByKeywords(pool, keywords) : [];
+
+            if (filtered.length === 0) {
+              // Fallback: if topic keywords didn't match anything, fall back to the time window or recent entries
+              filtered = hasTime ? pool : allEntries!.slice(-30);
+            }
+
+            relevant = filtered.length > MAX_ENTRIES
+              ? (preferNewer ? filtered.slice(-MAX_ENTRIES) : filtered.slice(0, MAX_ENTRIES))
+              : filtered;
           }
 
           const answer = await runAiSearch(question, relevant, controller.signal);
