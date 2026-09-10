@@ -14,6 +14,8 @@ export interface UploadedMediaItem {
   folder: string;
   was_compressed: number;
   file_size: number;
+  sha256?: string;
+  is_duplicate?: boolean;
   width?: number;
   height?: number;
   date_time_original?: string;
@@ -30,6 +32,21 @@ export interface UploadFailedItem {
   error: string;
 }
 
+export interface PiStorageDuplicateItem {
+  id?: number;
+  filename: string;
+  original_filename?: string;
+  folder: string;
+  relativePath: string;
+  file_url?: string;
+  thumbnail_url?: string;
+  sha256?: string;
+}
+
+export interface CheckHashesResponse {
+  duplicates: Record<string, PiStorageDuplicateItem>;
+}
+
 export interface UploadResponse {
   message: string;
   targetFolder: string;
@@ -37,6 +54,7 @@ export interface UploadResponse {
   failedCount: number;
   files: UploadedMediaItem[];
   failed: UploadFailedItem[];
+  duplicates?: UploadedMediaItem[];
 }
 
 export interface SignedUrlResponse {
@@ -99,6 +117,7 @@ export interface MediaFileItem {
     id?: number;
     original_filename?: string;
     media_type?: string;
+    sha256?: string;
     was_compressed?: number;
     width?: number;
     height?: number;
@@ -155,6 +174,81 @@ export const PISTORAGE_CONSTRAINTS = {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+async function blobToArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
+  if (typeof blob.arrayBuffer === 'function') {
+    return await blob.arrayBuffer();
+  }
+  if (typeof FileReader !== 'undefined') {
+    return new Promise<ArrayBuffer>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        resolve(reader.result as ArrayBuffer);
+      };
+      reader.onerror = () => {
+        reject(reader.error || new Error('Failed to read blob as ArrayBuffer'));
+      };
+      reader.readAsArrayBuffer(blob);
+    });
+  }
+  if (typeof Buffer !== 'undefined' && typeof (blob as any).text === 'function') {
+    const text = await (blob as any).text();
+    const buf = Buffer.from(text);
+    return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
+  }
+  throw new Error('Unable to convert Blob to ArrayBuffer in current environment');
+}
+
+/**
+ * Calculates SHA-256 hash for a given file, Blob, ArrayBuffer, or UploadFileInput.
+ * Returns a 64-character lowercase hexadecimal string.
+ */
+export async function computeSha256(item: UploadFileInput | File | Blob | ArrayBuffer | ArrayBufferView): Promise<string> {
+  let arrayBuffer: ArrayBuffer;
+
+  if (item instanceof ArrayBuffer) {
+    arrayBuffer = item;
+  } else if (ArrayBuffer.isView(item)) {
+    const view = item;
+    arrayBuffer = view.buffer.slice(
+      view.byteOffset,
+      view.byteOffset + view.byteLength
+    ) as ArrayBuffer;
+  } else if (item instanceof Blob) { // File inherits from Blob
+    arrayBuffer = await blobToArrayBuffer(item);
+  } else if (item && typeof item === 'object') {
+    if ('file' in item && item.file) {
+      arrayBuffer = await blobToArrayBuffer(item.file);
+    } else if ('buffer' in item && item.buffer) {
+      if (item.buffer instanceof ArrayBuffer) {
+        arrayBuffer = item.buffer;
+      } else if (ArrayBuffer.isView(item.buffer)) {
+        const view = item.buffer;
+        arrayBuffer = view.buffer.slice(
+          view.byteOffset,
+          view.byteOffset + view.byteLength
+        ) as ArrayBuffer;
+      } else {
+        throw new Error('Invalid buffer type in UploadFileInput');
+      }
+    } else {
+      throw new Error('Unsupported UploadFileInput structure');
+    }
+  } else {
+    throw new Error('Unsupported item type for computing SHA-256');
+  }
+
+  if (typeof globalThis.crypto !== 'undefined' && globalThis.crypto?.subtle) {
+    const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', arrayBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('').toLowerCase();
+  } else {
+    // Node.js fallback
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const crypto = require('crypto');
+    return crypto.createHash('sha256').update(Buffer.from(arrayBuffer)).digest('hex').toLowerCase();
+  }
+}
+
 export class PiStorageClient {
   private baseUrl: string;
   private apiKey: string;
@@ -191,6 +285,51 @@ export class PiStorageClient {
       h['X-API-Key'] = this.apiKey;
     }
     return h;
+  }
+
+  /**
+   * Checks whether a given path or folder belongs to the Journal directory.
+   */
+  isJournalFolder(folderOrPath?: string): boolean {
+    if (!folderOrPath) return false;
+    const normalized = folderOrPath.startsWith('/') ? folderOrPath.toLowerCase() : `/${folderOrPath.toLowerCase()}`;
+    const defaultPrefix = this.defaultFolder.startsWith('/')
+      ? this.defaultFolder.toLowerCase()
+      : `/${this.defaultFolder.toLowerCase()}`;
+    return normalized.startsWith(defaultPrefix) || normalized.startsWith('/journal');
+  }
+
+  /**
+   * Computes the SHA-256 hex string of a file input.
+   */
+  async computeFileHash(item: UploadFileInput | File | Blob | ArrayBuffer | Uint8Array): Promise<string> {
+    return computeSha256(item);
+  }
+
+  /**
+   * Bulk checks SHA-256 hashes against PiStorage to detect duplicates before uploading.
+   * @param hashes Array of lowercase SHA-256 hex strings
+   */
+  async checkHashes(hashes: string[]): Promise<CheckHashesResponse> {
+    if (!hashes || hashes.length === 0) {
+      return { duplicates: {} };
+    }
+
+    const res = await fetch(`${this.baseUrl}/api/check-hashes`, {
+      method: 'POST',
+      headers: {
+        ...this.headers,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ hashes }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(`[PiStorage Check Hashes Failed] ${res.status}: ${err.error || err.message || res.statusText}`);
+    }
+
+    return await res.json();
   }
 
   /**
@@ -268,7 +407,8 @@ export class PiStorageClient {
    * Uploads one or more files into a target PiStorage folder.
    * Enforces server constraints:
    *  - Pre-validates file sizes against MAX_FILE_SIZE_BYTES (1.5GB)
-   *  - Automatically chunks files into batches of MAX_BULK_UPLOAD_AMOUNT (5)
+   *  - Hashes files with SHA-256 and performs pre-flight deduplication against Journal directory
+   *  - Automatically chunks non-duplicate files into batches of MAX_BULK_UPLOAD_AMOUNT (5)
    *  - Handles rate limits (HTTP 429) with automatic backoff and retry
    *  - Throttles between chunk uploads to respect rate limits
    */
@@ -285,6 +425,7 @@ export class PiStorageClient {
         failedCount: 0,
         files: [],
         failed: [],
+        duplicates: [],
       };
     }
 
@@ -292,6 +433,7 @@ export class PiStorageClient {
     const validFiles: UploadFileInput[] = [];
     const allFailed: UploadFailedItem[] = [];
     const allUploaded: UploadedMediaItem[] = [];
+    const allDuplicates: UploadedMediaItem[] = [];
 
     // 1. Client-Side Pre-validation for File Size Limits (Up to 1.5GB)
     const maxLimitBytes = PISTORAGE_CONSTRAINTS.MAX_FILE_SIZE_BYTES;
@@ -310,16 +452,78 @@ export class PiStorageClient {
       }
     }
 
-    // 2. Batch Chunking into MAX_BULK_UPLOAD_AMOUNT (5) chunks
-    const chunkSize = PISTORAGE_CONSTRAINTS.MAX_BULK_UPLOAD_AMOUNT;
     const totalValid = validFiles.length;
-
     if (onProgress) {
       onProgress(0, totalValid);
     }
 
-    for (let i = 0; i < validFiles.length; i += chunkSize) {
-      const chunk = validFiles.slice(i, i + chunkSize);
+    // 2. Pre-Flight SHA-256 Hashing and Deduplication Check against Journal directory
+    const hashedEntries: Array<{
+      item: UploadFileInput;
+      info: { name: string; size: number; isVideo: boolean };
+      hash: string;
+    }> = [];
+    const uniqueHashesSet = new Set<string>();
+
+    for (const item of validFiles) {
+      const info = this.extractFileInfo(item);
+      let hash = '';
+      try {
+        hash = await computeSha256(item);
+        if (hash) {
+          uniqueHashesSet.add(hash);
+        }
+      } catch (hashErr) {
+        console.warn(`[PiStorageClient] Could not compute hash for ${info.name}:`, hashErr);
+      }
+      hashedEntries.push({ item, info, hash });
+    }
+
+    let duplicateMap: Record<string, PiStorageDuplicateItem> = {};
+    if (uniqueHashesSet.size > 0) {
+      try {
+        const checkRes = await this.checkHashes(Array.from(uniqueHashesSet));
+        if (checkRes && checkRes.duplicates) {
+          duplicateMap = checkRes.duplicates;
+        }
+      } catch (checkErr) {
+        console.warn('[PiStorageClient] Pre-flight hash check failed, proceeding with direct upload:', checkErr);
+      }
+    }
+
+    const filesToUpload: UploadFileInput[] = [];
+
+    for (const entry of hashedEntries) {
+      const { item, info, hash } = entry;
+      const dup = hash ? duplicateMap[hash] : null;
+
+      // Check if duplicate specifically exists in the Journal directory
+      if (dup && this.isJournalFolder(dup.folder || dup.relativePath)) {
+        const duplicateItem: UploadedMediaItem = {
+          id: dup.id,
+          original_filename: dup.original_filename || info.name,
+          filename: dup.filename,
+          file_url: dup.file_url || dup.relativePath,
+          thumbnail_url: dup.thumbnail_url || dup.relativePath,
+          media_type: info.isVideo ? 'video' : 'image',
+          folder: dup.folder,
+          was_compressed: 0,
+          file_size: info.size,
+          sha256: hash,
+          is_duplicate: true,
+        };
+        allUploaded.push(duplicateItem);
+        allDuplicates.push(duplicateItem);
+      } else {
+        filesToUpload.push(item);
+      }
+    }
+
+    // 3. Batch Chunking into MAX_BULK_UPLOAD_AMOUNT (5) chunks for remaining files
+    const chunkSize = PISTORAGE_CONSTRAINTS.MAX_BULK_UPLOAD_AMOUNT;
+
+    for (let i = 0; i < filesToUpload.length; i += chunkSize) {
+      const chunk = filesToUpload.slice(i, i + chunkSize);
       const formData = new FormData();
       formData.append('server_path', cleanFolder);
 
@@ -338,7 +542,7 @@ export class PiStorageClient {
         }
       }
 
-      // 3. Rate-Limit Aware Upload Dispatch with Backoff & Retries
+      // 4. Rate-Limit Aware Upload Dispatch with Backoff & Retries
       let attempt = 0;
       const maxRetries = 3;
       let chunkSuccess = false;
@@ -408,18 +612,23 @@ export class PiStorageClient {
       }
 
       // Small throttle between chunk uploads to respect rate limits
-      if (i + chunkSize < validFiles.length) {
+      if (i + chunkSize < filesToUpload.length) {
         await sleep(150);
       }
     }
 
+    if (onProgress) {
+      onProgress(allUploaded.length, totalValid);
+    }
+
     return {
-      message: `Processed ${files.length} file(s): ${allUploaded.length} uploaded, ${allFailed.length} failed`,
+      message: `Processed ${files.length} file(s): ${allUploaded.length} ready (${allDuplicates.length} deduplicated), ${allFailed.length} failed`,
       targetFolder: cleanFolder,
       uploadedCount: allUploaded.length,
       failedCount: allFailed.length,
       files: allUploaded,
       failed: allFailed,
+      duplicates: allDuplicates,
     };
   }
 
