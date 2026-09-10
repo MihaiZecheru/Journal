@@ -237,16 +237,31 @@ export async function computeSha256(item: UploadFileInput | File | Blob | ArrayB
     throw new Error('Unsupported item type for computing SHA-256');
   }
 
-  if (typeof globalThis.crypto !== 'undefined' && globalThis.crypto?.subtle) {
-    const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', arrayBuffer);
+  const cryptoObj =
+    typeof globalThis !== 'undefined' && globalThis.crypto
+      ? globalThis.crypto
+      : typeof window !== 'undefined' && window.crypto
+      ? window.crypto
+      : null;
+
+  if (cryptoObj && cryptoObj.subtle) {
+    const hashBuffer = await cryptoObj.subtle.digest('SHA-256', arrayBuffer);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('').toLowerCase();
-  } else {
-    // Node.js fallback
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const crypto = require('crypto');
-    return crypto.createHash('sha256').update(Buffer.from(arrayBuffer)).digest('hex').toLowerCase();
   }
+
+  // Fallback for non-browser/test environments without triggering Webpack 5 module resolution errors
+  try {
+    // eslint-disable-next-line no-eval
+    const nodeCrypto = eval('require')('crypto');
+    if (nodeCrypto && typeof nodeCrypto.createHash === 'function') {
+      return nodeCrypto.createHash('sha256').update(Buffer.from(arrayBuffer)).digest('hex').toLowerCase();
+    }
+  } catch {
+    // ignore
+  }
+
+  throw new Error('Web Crypto API (crypto.subtle) is not available');
 }
 
 export class PiStorageClient {
