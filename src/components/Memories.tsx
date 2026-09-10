@@ -1083,6 +1083,18 @@ const Memories: React.FC = () => {
     }
   };
 
+  // Dismiss a Failed Item from list
+  const handleDismissFailedUpload = (id: string) => {
+    const remainingFailed = failedUploads.filter((item) => item.id !== id);
+    setFailedUploads(remainingFailed);
+    if (remainingFailed.length === 0 && batchFiles.length === 0) {
+      const closeBtn = uploadModalRef.current?.querySelector(
+        'button[data-mdb-dismiss="modal"]'
+      ) as HTMLButtonElement;
+      if (closeBtn) closeBtn.click();
+    }
+  };
+
   const headerTitle =
     viewMode === 'unknown'
       ? 'Unknown Date'
@@ -1719,7 +1731,7 @@ const Memories: React.FC = () => {
                     <i className="fas fa-circle-exclamation me-2"></i>Failed Uploads
                   </h6>
                   <p className="small text-light opacity-75 mb-2">
-                    The following photos could not be uploaded (e.g. file size exceeds limit or server rejected file). Click <b>Retry</b> to try again.
+                    The following photos could not be uploaded. Click <b>Retry</b> to try again.
                   </p>
                   <div>
                     {failedUploads.map((failedItem) => (
@@ -1729,13 +1741,23 @@ const Memories: React.FC = () => {
                           <span className="text-light opacity-75 ms-2 small">({failedItem.file.name})</span>
                           <div className="text-danger small mt-1">{failedItem.reason}</div>
                         </div>
-                        <div>
+                        <div className="d-flex align-items-center gap-2">
                           <button
                             type="button"
                             className="btn btn-outline-danger btn-sm"
                             onClick={() => handleRetryUpload(failedItem)}
+                            title="Retry"
                           >
                             <i className="fas fa-rotate-right me-1"></i>Retry
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-outline-secondary btn-sm"
+                            onClick={() => handleDismissFailedUpload(failedItem.id)}
+                            title="Dismiss error"
+                            aria-label="Dismiss error"
+                          >
+                            <i className="fas fa-times"></i>
                           </button>
                         </div>
                       </div>

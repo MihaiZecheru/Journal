@@ -288,15 +288,40 @@ export class PiStorageClient {
   }
 
   /**
+   * Extracts the user-scoped journal directory prefix from a target folder.
+   * e.g., '/journal/user123/2026-08-10' -> '/journal/user123'
+   * e.g., '/journal/user123/Unknown-Date' -> '/journal/user123'
+   */
+  getUserJournalPrefix(targetFolder?: string): string {
+    if (!targetFolder) return this.defaultFolder.toLowerCase();
+    const clean = targetFolder.startsWith('/') ? targetFolder : `/${targetFolder}`;
+    const parts = clean.split('/').filter(Boolean);
+    if (parts.length >= 2) {
+      return `/${parts[0]}/${parts[1]}`.toLowerCase();
+    }
+    return (clean.length > 1 ? clean : this.defaultFolder).toLowerCase();
+  }
+
+  /**
+   * Checks whether a duplicate folder/path exists in the user's /journal/<user_id> directory.
+   */
+  isUserJournalFolder(folderOrPath?: string, userPrefix?: string): boolean {
+    if (!folderOrPath) return false;
+    const normalized = (folderOrPath.startsWith('/') ? folderOrPath : `/${folderOrPath}`).toLowerCase();
+    const prefix = (userPrefix || this.defaultFolder).toLowerCase();
+    return normalized === prefix || normalized.startsWith(`${prefix}/`);
+  }
+
+  /**
    * Checks whether a given path or folder belongs to the Journal directory.
    */
   isJournalFolder(folderOrPath?: string): boolean {
     if (!folderOrPath) return false;
-    const normalized = folderOrPath.startsWith('/') ? folderOrPath.toLowerCase() : `/${folderOrPath.toLowerCase()}`;
-    const defaultPrefix = this.defaultFolder.startsWith('/')
-      ? this.defaultFolder.toLowerCase()
-      : `/${this.defaultFolder.toLowerCase()}`;
-    return normalized.startsWith(defaultPrefix) || normalized.startsWith('/journal');
+    const normalized = (folderOrPath.startsWith('/') ? folderOrPath : `/${folderOrPath}`).toLowerCase();
+    const defaultPrefix = (this.defaultFolder.startsWith('/')
+      ? this.defaultFolder
+      : `/${this.defaultFolder}`).toLowerCase();
+    return normalized === defaultPrefix || normalized.startsWith(`${defaultPrefix}/`) || normalized === '/journal' || normalized.startsWith('/journal/');
   }
 
   /**
@@ -491,15 +516,23 @@ export class PiStorageClient {
       }
     }
 
+    const userJournalPrefix = this.getUserJournalPrefix(cleanFolder);
     const filesToUpload: UploadFileInput[] = [];
 
     for (const entry of hashedEntries) {
       const { item, info, hash } = entry;
       const dup = hash ? duplicateMap[hash] : null;
 
-      // Check if duplicate specifically exists in the Journal directory
-      if (dup && this.isJournalFolder(dup.folder || dup.relativePath)) {
-        const duplicateItem: UploadedMediaItem = {
+      // Check if duplicate specifically exists in /journal/<user_id> (including Unknown Date, subfolders, etc.)
+      if (dup && this.isUserJournalFolder(dup.folder || dup.relativePath, userJournalPrefix)) {
+        const matchName = dup.original_filename || dup.filename;
+        const errMsg = `File already exists in ${dup.folder} (matches "${matchName}")`;
+        allFailed.push({
+          original_name: info.name,
+          original_filename: info.name,
+          error: errMsg,
+        });
+        allDuplicates.push({
           id: dup.id,
           original_filename: dup.original_filename || info.name,
           filename: dup.filename,
@@ -511,9 +544,7 @@ export class PiStorageClient {
           file_size: info.size,
           sha256: hash,
           is_duplicate: true,
-        };
-        allUploaded.push(duplicateItem);
-        allDuplicates.push(duplicateItem);
+        });
       } else {
         filesToUpload.push(item);
       }

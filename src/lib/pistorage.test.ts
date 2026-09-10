@@ -33,6 +33,32 @@ describe('PiStorage SHA-256 and Deduplication', () => {
     });
   });
 
+  describe('getUserJournalPrefix & isUserJournalFolder', () => {
+    const client = new PiStorageClient({ defaultFolder: '/journal' });
+
+    it('extracts user prefix correctly from targetFolder', () => {
+      expect(client.getUserJournalPrefix('/journal/user123/2026-08-10')).toBe('/journal/user123');
+      expect(client.getUserJournalPrefix('/journal/user123/Unknown-Date')).toBe('/journal/user123');
+      expect(client.getUserJournalPrefix('/journal/user123')).toBe('/journal/user123');
+    });
+
+    it('identifies folders belonging to the specific user in Journal (including Unknown-Date)', () => {
+      const userPrefix = '/journal/user123';
+      expect(client.isUserJournalFolder('/journal/user123/Unknown-Date', userPrefix)).toBe(true);
+      expect(client.isUserJournalFolder('/journal/user123/2026-08-10', userPrefix)).toBe(true);
+      expect(client.isUserJournalFolder('/journal/user123/2026/05', userPrefix)).toBe(true);
+      expect(client.isUserJournalFolder('/journal/user123', userPrefix)).toBe(true);
+    });
+
+    it('rejects folders belonging to other users or non-journal directories', () => {
+      const userPrefix = '/journal/user123';
+      expect(client.isUserJournalFolder('/journal/user456/2026-08-10', userPrefix)).toBe(false);
+      expect(client.isUserJournalFolder('/journal/user456/Unknown-Date', userPrefix)).toBe(false);
+      expect(client.isUserJournalFolder('/other/folder', userPrefix)).toBe(false);
+      expect(client.isUserJournalFolder('/wallpapers/nature.jpg', userPrefix)).toBe(false);
+    });
+  });
+
   describe('isJournalFolder', () => {
     const client = new PiStorageClient({ defaultFolder: '/journal' });
 
@@ -90,14 +116,14 @@ describe('PiStorage SHA-256 and Deduplication', () => {
   });
 
   describe('uploadFiles with Journal deduplication', () => {
-    it('skips uploading duplicate file if it already exists in Journal dir', async () => {
+    it('fails upload and skips /upload if duplicate exists in /journal/<user_id> (e.g. Unknown-Date folder)', async () => {
       const client = new PiStorageClient({ baseUrl: 'https://storage.test', apiKey: 'test-key', defaultFolder: '/journal' });
 
       // File with known content "hello world"
       const file = new File(['hello world'], 'test.jpg', { type: 'image/jpeg' });
       const hash = 'b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9';
 
-      // Mock check-hashes returning duplicate in Journal
+      // Mock check-hashes returning duplicate in user's Unknown-Date folder
       (globalThis.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -105,50 +131,52 @@ describe('PiStorage SHA-256 and Deduplication', () => {
             [hash]: {
               id: 99,
               filename: 'existing-photo.jpg',
-              original_filename: 'test.jpg',
-              folder: '/journal/user1/2026-08-10',
-              relativePath: '/journal/user1/2026-08-10/existing-photo.jpg',
-              file_url: '/view/journal/user1/2026-08-10/existing-photo.jpg',
-              thumbnail_url: '/thumb/journal/user1/2026-08-10/existing-photo.jpg',
+              original_filename: 'original-photo.jpg',
+              folder: '/journal/user1/Unknown-Date',
+              relativePath: '/journal/user1/Unknown-Date/existing-photo.jpg',
+              file_url: '/view/journal/user1/Unknown-Date/existing-photo.jpg',
+              thumbnail_url: '/thumb/journal/user1/Unknown-Date/existing-photo.jpg',
             },
           },
         }),
       });
 
+      // Uploading to a different date folder for the same user
       const res = await client.uploadFiles('/journal/user1/2026-08-10', [file]);
 
       // fetch should only have been called once for /api/check-hashes, NOT for /upload!
       expect(globalThis.fetch).toHaveBeenCalledTimes(1);
-      expect(res.uploadedCount).toBe(1);
+      expect(res.uploadedCount).toBe(0);
+      expect(res.failedCount).toBe(1);
+      expect(res.failed[0].error).toBe('File already exists in /journal/user1/Unknown-Date (matches "original-photo.jpg")');
       expect(res.duplicates).toHaveLength(1);
       expect(res.duplicates![0].is_duplicate).toBe(true);
       expect(res.duplicates![0].filename).toBe('existing-photo.jpg');
-      expect(res.files[0].sha256).toBe(hash);
     });
 
-    it('does NOT skip uploading if duplicate is in a non-Journal dir (e.g. /other)', async () => {
+    it('does NOT fail or skip uploading if duplicate is in another user folder (/journal/user2)', async () => {
       const client = new PiStorageClient({ baseUrl: 'https://storage.test', apiKey: 'test-key', defaultFolder: '/journal' });
 
       const file = new File(['hello world'], 'test.jpg', { type: 'image/jpeg' });
       const hash = 'b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9';
 
-      // Mock check-hashes returning duplicate in non-Journal directory /other
+      // Mock check-hashes returning duplicate in user2's folder
       (globalThis.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
         json: async () => ({
           duplicates: {
             [hash]: {
               id: 101,
-              filename: 'other-photo.jpg',
+              filename: 'other-user-photo.jpg',
               original_filename: 'test.jpg',
-              folder: '/other/wallpapers',
-              relativePath: '/other/wallpapers/other-photo.jpg',
+              folder: '/journal/user2/Unknown-Date',
+              relativePath: '/journal/user2/Unknown-Date/other-user-photo.jpg',
             },
           },
         }),
       });
 
-      // Mock upload endpoint succeeding
+      // Mock upload endpoint succeeding for user1
       (globalThis.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -171,6 +199,7 @@ describe('PiStorage SHA-256 and Deduplication', () => {
       // fetch should have been called twice: 1 for check-hashes, 1 for /upload
       expect(globalThis.fetch).toHaveBeenCalledTimes(2);
       expect(res.uploadedCount).toBe(1);
+      expect(res.failedCount).toBe(0);
       expect(res.duplicates).toHaveLength(0);
       expect(res.files[0].filename).toBe('newly-uploaded.jpg');
     });
