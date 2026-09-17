@@ -1,12 +1,16 @@
 import { useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, Navigate } from 'react-router-dom';
 import supabase from '../database/config/supabase';
+import { hasStoredSession } from '../database/hasStoredSession';
 import '../styles/landing.css';
 
 const Landing = () => {
   const navigate = useNavigate();
+  const isStoredLoggedIn = hasStoredSession();
 
   useEffect(() => {
+    if (isStoredLoggedIn) return;
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
         navigate('/home', { replace: true });
@@ -22,7 +26,11 @@ const Landing = () => {
     return () => {
       authListener?.subscription.unsubscribe();
     };
-  }, [navigate]);
+  }, [navigate, isStoredLoggedIn]);
+
+  if (isStoredLoggedIn) {
+    return <Navigate to="/home" replace />;
+  }
 
   const onBtnClick = () => {
     setTimeout(() => navigate('/login'), 250);

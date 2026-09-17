@@ -483,6 +483,18 @@
   overflow: visible;
 }
 
+/* ─── Search highlight ───────────────────────────────────────────────── */
+mark.search-highlight,
+.search-highlight {
+  background-color: rgba(250, 204, 21, 0.35);
+  color: #fef08a;
+  border-radius: 4px;
+  padding: 0.05em 0.25em;
+  font-weight: 600;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
 /* ─── Responsive ─────────────────────────────────────────────────────── */
 @media screen and (max-width: 480px) {
   #search-box {

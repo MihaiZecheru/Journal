@@ -330,7 +330,11 @@ function parseBoolQuery(tokens: BoolToken[]): BoolExpr {
     throw new Error(`Unexpected token: ${t.type}`);
   };
 
-  return parseOr();
+  const expr = parseOr();
+  if (pos < tokens.length) {
+    throw new Error(`Unexpected token: ${tokens[pos].type}`);
+  }
+  return expr;
 }
 
 function evalBoolExpr(expr: BoolExpr, text: string): boolean {
@@ -349,9 +353,80 @@ function matchesQuery(entry: Entry, rawQuery: string): boolean {
   }
 }
 
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function extractSearchTerms(query: string): string[] {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const upper = trimmed.toUpperCase();
+  const hasBoolOp = /\b(AND|OR)\b/.test(upper);
+
+  if (hasBoolOp) {
+    try {
+      const tokens = tokenizeQuery(trimmed);
+      parseBoolQuery(tokens);
+      const terms: string[] = [];
+      for (const t of tokens) {
+        if (t.type === 'WORD' && t.value) {
+          const clean = t.value.replace(/^["']+|["']+$/g, '').trim();
+          if (clean) terms.push(clean);
+        }
+      }
+      if (terms.length > 0) return terms;
+    } catch {
+      // If parsing boolean failed, fall through to phrase treatment
+    }
+  }
+
+  const clean = trimmed.replace(/^["']+|["']+$/g, '').trim();
+  return clean ? [clean] : [];
+}
+
+function renderHighlightedText(text: string, query: string): React.ReactNode {
+  if (!text || !query) return text;
+
+  const terms = extractSearchTerms(query);
+  if (terms.length === 0) return text;
+
+  const seen = new Set<string>();
+  const uniqueTerms: string[] = [];
+  for (const term of terms) {
+    const lower = term.toLowerCase();
+    if (lower.length > 0 && !seen.has(lower)) {
+      seen.add(lower);
+      uniqueTerms.push(term);
+    }
+  }
+
+  if (uniqueTerms.length === 0) return text;
+
+  uniqueTerms.sort((a, b) => b.length - a.length);
+
+  const pattern = uniqueTerms.map(escapeRegExp).join('|');
+  const splitRegex = new RegExp(`(${pattern})`, 'gi');
+  const matchRegex = new RegExp(`^(?:${pattern})$`, 'i');
+
+  const parts = text.split(splitRegex);
+
+  return parts.map((part, index) => {
+    if (matchRegex.test(part)) {
+      return (
+        <mark key={index} className="search-highlight">
+          {part}
+        </mark>
+      );
+    }
+    return part;
+  });
+}
+
 const Search = () => {
   const searchBox = useRef<HTMLInputElement>(null);
   const [searchResults, setSearchResults] = useState<Entry[] | null>(null);
+  const [activeQuery, setActiveQuery] = useState<string>('');
   const [allEntries, setAllEntries] = useState<Entry[]>();
   const [loading, setLoading] = useState<boolean>(true);
   const [sortByAscending, setSortByAscending] = useState<boolean>(true);
@@ -375,10 +450,15 @@ const Search = () => {
       GetAllUserEntries(await GetUserID()).then((entries: Entry[]) => {
         setAllEntries(entries);
         setLoading(false);
-        searchBox.current?.focus();
       });
     })();
   }, []);
+
+  useEffect(() => {
+    if (!loading) {
+      searchBox.current?.focus();
+    }
+  }, [loading]);
 
   useEffect(() => {
     if (!showInfo) return;
@@ -411,7 +491,7 @@ const Search = () => {
       }
     });
     setExpandableIndices(expandable);
-  }, [searchResults]);
+  }, [searchResults, activeQuery]);
 
   const handleSearchInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!isAiMode && e.target.value.toLowerCase().startsWith('/ai ')) {
@@ -423,6 +503,7 @@ const Search = () => {
   const exitAiMode = () => {
     setIsAiMode(false);
     if (searchBox.current) searchBox.current.value = '';
+    setActiveQuery('');
     searchBox.current?.focus();
   };
 
@@ -442,6 +523,7 @@ const Search = () => {
       const q = search_query.toLowerCase();
 
       if (isAiMode || q.startsWith('/ai ') || q === '/ai') {
+        setActiveQuery('');
         const question = isAiMode ? search_query : search_query.slice(4).trim();
         if (!question) return;
         setSearchResults(null);
@@ -497,6 +579,8 @@ const Search = () => {
         }
         return;
       }
+
+      setActiveQuery(search_query);
 
       const monthIndex = MONTH_NAMES.indexOf(q);
       const weekdayIndex = WEEKDAY_NAMES.indexOf(q);
@@ -564,6 +648,7 @@ const Search = () => {
               placeholder={isAiMode ? 'Ask a question…' : 'Search entries…'}
               onKeyDown={searchBoxOnKeyDown}
               onChange={handleSearchInput}
+              autoFocus
             />
           </div>
           <button className="search-info-btn" onClick={() => setShowInfo(p => !p)} aria-label="Search help">
@@ -669,7 +754,7 @@ const Search = () => {
                   className={`search-result-body ${isExpanded ? 'search-result-body--expanded' : ''}`}
                   ref={el => { bodyRefs.current[index] = el; }}
                 >
-                  {entry.journal_entry}
+                  {renderHighlightedText(entry.journal_entry, activeQuery)}
                 </p>
               </div>
             );
