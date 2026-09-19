@@ -28,7 +28,8 @@
   },
   "scripts": {
     "start": "node ./server/server.js",
-    "build": "react-scripts build"
+    "build": "react-scripts build",
+    "upload:memories": "node ./scripts/bulk-upload-memories.mjs"
   },
   "eslintConfig": {
     "extends": [
