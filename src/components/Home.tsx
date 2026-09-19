@@ -43,6 +43,67 @@ const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const colors = ['#FF3B30', '#FF6835', '#FF9F00', '#FFD000', '#F5F000', '#BCEC00', '#72D900', '#2DBD55', '#00B84C', '#30E070', '#bdbdbd']; // gray at the end
 
+const CACHE_PREFIX = 'journal_home_cache_';
+
+function getMonthRangeFromYearMonth(year: number, monthZeroIndexed: number): { startStr: TDateString; endStr: TDateString; monthKey: string } {
+  const startStr = `${year}-${String(monthZeroIndexed + 1).padStart(2, '0')}-01` as TDateString;
+  const lastDay = new Date(year, monthZeroIndexed + 1, 0).getDate();
+  const endStr = `${year}-${String(monthZeroIndexed + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}` as TDateString;
+  const monthKey = `${year}-${String(monthZeroIndexed + 1).padStart(2, '0')}`;
+  return { startStr, endStr, monthKey };
+}
+
+function getHomeCache(userId: string): { entries: Entry[]; customTrackers: CustomTracker[] } | null {
+  try {
+    const raw = localStorage.getItem(`${CACHE_PREFIX}${userId}`);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.error('Failed to read home cache from localStorage:', e);
+  }
+  return null;
+}
+
+function findAnyHomeCache(): { userId: string; entries: Entry[]; customTrackers: CustomTracker[] } | null {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(CACHE_PREFIX)) {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const userId = key.replace(CACHE_PREFIX, '');
+          return { userId, entries: parsed.entries || [], customTrackers: parsed.customTrackers || [] };
+        }
+      }
+    }
+    // Check legacy sessionStorage to migrate if user had existing session cache
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key?.startsWith(CACHE_PREFIX)) {
+        const raw = sessionStorage.getItem(key);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const userId = key.replace(CACHE_PREFIX, '');
+          localStorage.setItem(key, raw);
+          sessionStorage.removeItem(key);
+          return { userId, entries: parsed.entries || [], customTrackers: parsed.customTrackers || [] };
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Failed to find home cache:', e);
+  }
+  return null;
+}
+
+function saveHomeCache(userId: string, entries: Entry[], customTrackers: CustomTracker[]) {
+  try {
+    localStorage.setItem(`${CACHE_PREFIX}${userId}`, JSON.stringify({ entries, customTrackers }));
+  } catch (e) {
+    console.error('Failed to save home cache to localStorage:', e);
+  }
+}
+
 function sort_custom_trackers(trackers: CustomTracker[]): CustomTracker[] {
   // Sort the custom trackers so that text-input trackers are first and checkbox trackers are last
   return trackers.sort((a: CustomTracker, b: CustomTracker) => a.type === b.type ? 0 : a.type === 'text' ? -1 : 1);
@@ -114,7 +175,10 @@ const Home = () => {
   const customTrackersModal = useRef<HTMLDivElement>(null);
   const customTrackersModalBody = useRef<HTMLDivElement>(null);
   const addCustomTrackerModal = useRef<HTMLDivElement>(null);
-  const [customTrackers, setCustomTrackers] = useState<CustomTracker[]>([]);
+  const [customTrackers, setCustomTrackers] = useState<CustomTracker[]>(() => {
+    const cachedData = findAnyHomeCache();
+    return cachedData ? sort_custom_trackers(cachedData.customTrackers) : [];
+  });
 
   // Add custom trackers modal
   const addCustomTrackerTypeLabel = useRef<HTMLLabelElement>(null);
@@ -396,68 +460,165 @@ const Home = () => {
     }
   };
 
-  // Start with no loading screen if a cache entry already exists in sessionStorage
-  const [loading, setLoading] = useState<boolean>(() => {
-    for (let i = 0; i < sessionStorage.length; i++) {
-      if (sessionStorage.key(i)?.startsWith('journal_home_cache_')) return false;
-    }
-    return true;
-  });
+  // Always start with loading screen visible until the currently focused month is fetched from Supabase
+  const [loading, setLoading] = useState<boolean>(true);
   const [editMode, setEditMode] = useState<boolean>(false);
   const entries = useRef<Entry[]>([]);
+  const userIdRef = useRef<UserID | null>(null);
+  const fetchedMonthsRef = useRef<Set<string>>(new Set());
+  const isInitialLoadDone = useRef<boolean>(false);
+
+  // Synchronously initialize entries from any existing localStorage cache on the very first render
+  if (entries.current.length === 0) {
+    const initialCache = findAnyHomeCache();
+    if (initialCache && initialCache.entries.length > 0) {
+      entries.current = initialCache.entries;
+    }
+  }
 
   useEffect(() => {
     initMDB({ Modal, Ripple, Input, Range });
-    const timeStamp = Date.now();
     if (mobileCheck()) document.body.classList.add('mobile');
 
-    // Synchronously find and apply any existing cache before the first await,
-    // so the calendar is populated on the same frame as the initial render.
-    let existingCacheKey: string | null = null;
-    for (let i = 0; i < sessionStorage.length; i++) {
-      const key = sessionStorage.key(i);
-      if (key?.startsWith('journal_home_cache_')) { existingCacheKey = key; break; }
-    }
-
-    if (existingCacheKey) {
-      const cached = sessionStorage.getItem(existingCacheKey)!;
-      const { entries: cachedEntries, customTrackers: cachedTrackers } = JSON.parse(cached);
-      entries.current = cachedEntries as Entry[];
-      loadCalendar(cachedEntries as Entry[], calendar.current!.getApi());
-      setCustomTrackers(sort_custom_trackers(cachedTrackers as CustomTracker[]));
+    // Populate calendar with cached entries if available on mount
+    if (entries.current.length > 0 && calendar.current?.getApi()) {
+      loadCalendar(entries.current, calendar.current.getApi());
     }
 
     (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      const userId = (session?.user?.id ?? await GetUserID()) as UserID;
-      const cacheKey = `journal_home_cache_${userId}`;
+      let userId: UserID;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        userId = (session?.user?.id ?? await GetUserID()) as UserID;
+      } catch (authErr) {
+        console.error('Failed to get user session:', authErr);
+        setLoading(false);
+        return;
+      }
 
-      // Always refresh from the database (background if cache was found, foreground if not)
-      const [{ data: freshEntries, error }, { data: freshTrackers, error: error1 }] = await Promise.all([
-        supabase.from('Entries').select().eq('user_id', userId),
-        supabase.from('CustomTrackers').select().eq('user_id', userId),
-      ]);
+      userIdRef.current = userId;
 
-      if (error) { console.error(`Error fetching entries: ${error.message}`); throw error; }
-      if (error1) { console.error(`Error fetching custom trackers: ${error1.message}`); throw error1; }
+      // If user-specific cache exists, ensure entries and trackers match this user
+      const userCache = getHomeCache(userId);
+      if (userCache) {
+        entries.current = userCache.entries;
+        setCustomTrackers(sort_custom_trackers(userCache.customTrackers));
+        if (calendar.current?.getApi()) {
+          loadCalendar(entries.current, calendar.current.getApi());
+        }
+      }
 
-      // Remove a stale cache from a different user if present
-      if (existingCacheKey && existingCacheKey !== cacheKey) sessionStorage.removeItem(existingCacheKey);
+      // Determine currently focused month (defaulting to today's month in PST)
+      const todayStr = GetTodaysDate();
+      const [tYear, tMonth] = todayStr.split('-').map(Number);
+      let targetYear = tYear;
+      let targetMonthZeroIndexed = tMonth - 1;
 
-      sessionStorage.setItem(cacheKey, JSON.stringify({ entries: freshEntries, customTrackers: freshTrackers }));
-      entries.current = (freshEntries ?? []) as Entry[];
-      loadCalendar((freshEntries ?? []) as Entry[], calendar.current!.getApi());
-      setCustomTrackers(sort_custom_trackers((freshTrackers ?? []) as CustomTracker[]));
+      if (calendar.current?.getApi()) {
+        const calDate = calendar.current.getApi().getDate();
+        if (calDate) {
+          targetYear = calDate.getFullYear();
+          targetMonthZeroIndexed = calDate.getMonth();
+        }
+      }
 
-      if (!existingCacheKey) {
-        // First visit — keep the loading screen up for the minimum duration
-        while (Date.now() - timeStamp < 1500) continue;
+      const { startStr, endStr, monthKey } = getMonthRangeFromYearMonth(targetYear, targetMonthZeroIndexed);
+      fetchedMonthsRef.current.add(monthKey);
+
+      try {
+        // Always pull the entire currently focused month before stopping loading / revealing the screen
+        const [{ data: freshMonthEntries, error }, { data: freshTrackers, error: trackerError }] = await Promise.all([
+          supabase
+            .from('Entries')
+            .select()
+            .eq('user_id', userId)
+            .gte('date', startStr)
+            .lte('date', endStr),
+          supabase
+            .from('CustomTrackers')
+            .select()
+            .eq('user_id', userId),
+        ]);
+
+        if (error) {
+          console.error(`Error fetching month entries: ${error.message}`);
+          throw error;
+        }
+        if (trackerError) {
+          console.error(`Error fetching custom trackers: ${trackerError.message}`);
+          throw trackerError;
+        }
+
+        // Merge: keep all cached entries outside this month range, and replace this month with fresh entries
+        const nonMonthEntries = entries.current.filter((entry: Entry) => entry.date < startStr || entry.date > endStr);
+        const mergedEntries = [...nonMonthEntries, ...(freshMonthEntries ?? []) as Entry[]];
+        entries.current = mergedEntries;
+
+        const updatedTrackers = freshTrackers ? sort_custom_trackers(freshTrackers as CustomTracker[]) : customTrackers;
+
+        saveHomeCache(userId, mergedEntries, updatedTrackers);
+
+        if (calendar.current?.getApi()) {
+          loadCalendar(mergedEntries, calendar.current.getApi());
+        }
+        if (freshTrackers) {
+          setCustomTrackers(updatedTrackers);
+        }
+      } catch (err) {
+        console.error('Error fetching initial focused month:', err);
+      } finally {
+        isInitialLoadDone.current = true;
         setLoading(false);
       }
 
       processPendingSharedPhotos();
     })();
   }, []);
+
+  const handleDatesSet = async (dateInfo: any) => {
+    if (!isInitialLoadDone.current) return;
+    const calDate = dateInfo.view?.currentStart;
+    if (!calDate) return;
+
+    const targetYear = calDate.getFullYear();
+    const targetMonthZeroIndexed = calDate.getMonth();
+    const { startStr, endStr, monthKey } = getMonthRangeFromYearMonth(targetYear, targetMonthZeroIndexed);
+
+    if (fetchedMonthsRef.current.has(monthKey)) return;
+
+    const userId = userIdRef.current;
+    if (!userId) return;
+
+    fetchedMonthsRef.current.add(monthKey);
+
+    try {
+      const { data: freshMonthEntries, error } = await supabase
+        .from('Entries')
+        .select()
+        .eq('user_id', userId)
+        .gte('date', startStr)
+        .lte('date', endStr);
+
+      if (error) {
+        console.error(`Error fetching entries for month ${monthKey}: ${error.message}`);
+        fetchedMonthsRef.current.delete(monthKey);
+        return;
+      }
+
+      const nonMonthEntries = entries.current.filter((entry: Entry) => entry.date < startStr || entry.date > endStr);
+      const mergedEntries = [...nonMonthEntries, ...(freshMonthEntries ?? []) as Entry[]];
+      entries.current = mergedEntries;
+
+      saveHomeCache(userId, mergedEntries, customTrackers);
+
+      if (calendar.current?.getApi()) {
+        loadCalendar(mergedEntries, calendar.current.getApi());
+      }
+    } catch (err) {
+      console.error(`Failed to fetch entries for month ${monthKey}:`, err);
+      fetchedMonthsRef.current.delete(monthKey);
+    }
+  };
 
   useEffect(() => {
     const btns = document.querySelectorAll('.fc-custom-btn-button')!;
@@ -577,7 +738,10 @@ const Home = () => {
           await SetStarredValue(await GetUserID(), existingEntry.date, false);
         }
         calendar.current!.getApi().getEvents().find((event: any) => event.startStr === existingEntry.date)!.setExtendedProp('starred', existingEntry.starred);
-        entries.current.map((entry: Entry) => entry.date === existingEntry.date ? existingEntry : entry);
+        entries.current = entries.current.map((entry: Entry) => entry.date === existingEntry.date ? { ...entry, starred: existingEntry.starred } : entry);
+        if (userIdRef.current) {
+          saveHomeCache(userIdRef.current, entries.current, customTrackers);
+        }
       });
       const color = colors[existingEntry.rating - 1];
       currentViewEntry.current = existingEntry;
@@ -681,7 +845,10 @@ const Home = () => {
             await SetStarredValue(await GetUserID(), existingEntry.date, false);
           }
           calendar.current!.getApi().getEvents().find((event: any) => event.startStr === existingEntry.date)!.setExtendedProp('starred', existingEntry.starred);
-          entries.current.map((entry: Entry) => entry.date === existingEntry.date ? existingEntry : entry);
+          entries.current = entries.current.map((entry: Entry) => entry.date === existingEntry.date ? { ...entry, starred: existingEntry.starred } : entry);
+          if (userIdRef.current) {
+            saveHomeCache(userIdRef.current, entries.current, customTrackers);
+          }
         });
       setModalColor(existingRating);
 
@@ -755,11 +922,11 @@ const Home = () => {
     let rating = parseInt(entryModalRatingInput.current!.value);
 
     // Get custom trackers
-    const customTrackers: { [key: string]: string | boolean } = {};
+    const entryTrackers: { [key: string]: string | boolean } = {};
     document.querySelectorAll('.custom-tracker-input').forEach((input: Element) => {
       const name = input.getAttribute('data-tracker-name')!;
       const value = input.querySelector('input')?.type === 'checkbox' ? (input.querySelector('input') as HTMLInputElement).checked : (input.querySelector('input') as HTMLInputElement).value;
-      if (name && (value || value === false)) customTrackers[name] = value;
+      if (name && (value || value === false)) entryTrackers[name] = value;
     });
 
     // If no text, don't save
@@ -775,7 +942,7 @@ const Home = () => {
       // Update the entry in the database
       const { error } = await supabase
         .from('Entries')
-        .update({ rating, journal_entry: text, custom_trackers: customTrackers, starred: false })
+        .update({ rating, journal_entry: text, custom_trackers: entryTrackers, starred: false })
         .eq('date', startStr)
         .eq('user_id', await GetUserID());
 
@@ -786,19 +953,19 @@ const Home = () => {
 
       // Add to entries
       const index = entries.current.findIndex((entry: Entry) => entry.date === startStr);
-      entries.current[index] = { user_id: await GetUserID(), date: startStr as TDateString, rating, journal_entry: text, custom_trackers: customTrackers, starred: false };
+      entries.current[index] = { user_id: await GetUserID(), date: startStr as TDateString, rating, journal_entry: text, custom_trackers: entryTrackers, starred: false };
 
       // Remove the existing event from the calendar
       const event = calendar.current!.getApi().getEvents().find((event: any) => event.startStr === startStr)!;
       event.setProp('title', text);
       event.setProp('color', colors[rating - 1]);
       event.setProp('display', startStr === GetTodaysDate() ? 'foreground' : 'background');
-      event.setExtendedProp('custom_trackers', customTrackers);
+      event.setExtendedProp('custom_trackers', entryTrackers);
     } else {
       // Add the entry to the database
       const { error } = await supabase
         .from('Entries')
-        .insert({ user_id: await GetUserID(), date: startStr, rating, journal_entry: text, custom_trackers: customTrackers, starred: false });
+        .insert({ user_id: await GetUserID(), date: startStr, rating, journal_entry: text, custom_trackers: entryTrackers, starred: false });
 
       if (error) {
         console.error(`Error inserting entry: ${error.message}`);
@@ -806,7 +973,7 @@ const Home = () => {
       }
 
       // Add to entries
-      entries.current.push({ user_id: await GetUserID(), date: startStr as TDateString, rating, journal_entry: text, custom_trackers: customTrackers, starred: false });
+      entries.current.push({ user_id: await GetUserID(), date: startStr as TDateString, rating, journal_entry: text, custom_trackers: entryTrackers, starred: false });
       
       // If today, add as foreground event
       if (startStr === GetTodaysDate()) {
@@ -817,7 +984,7 @@ const Home = () => {
           display: 'foreground',
           color: colors[rating - 1],
           extendedProps: {
-            custom_trackers: customTrackers
+            custom_trackers: entryTrackers
           }
         });
       } else {
@@ -829,10 +996,14 @@ const Home = () => {
           display: 'background',
           color: colors[rating - 1],
           extendedProps: {
-            custom_trackers: customTrackers
+            custom_trackers: entryTrackers
           }
         });
       }
+    }
+
+    if (userIdRef.current) {
+      saveHomeCache(userIdRef.current, entries.current, customTrackers);
     }
 
     window.localStorage.removeItem("entry-modal-draft");
@@ -877,12 +1048,20 @@ const Home = () => {
     // Remove from entries
     entries.current = entries.current.filter((entry: Entry) => entry.date !== startStr);
 
+    if (userIdRef.current) {
+      saveHomeCache(userIdRef.current, entries.current, customTrackers);
+    }
+
     // Close modal
     (entryModal.current!.querySelector('button.btn-secondary') as HTMLButtonElement).click();
   }
 
   const deleteCustomTracker = async (name: string) => {
-    setCustomTrackers(sort_custom_trackers(customTrackers.filter((tracker: CustomTracker) => tracker.name !== name)));
+    const updated = sort_custom_trackers(customTrackers.filter((tracker: CustomTracker) => tracker.name !== name));
+    setCustomTrackers(updated);
+    if (userIdRef.current) {
+      saveHomeCache(userIdRef.current, entries.current, updated);
+    }
 
     const { error } = await supabase
       .from('CustomTrackers')
@@ -919,7 +1098,11 @@ const Home = () => {
       throw error;
     }
 
-    setCustomTrackers(sort_custom_trackers([...customTrackers, newTracker]));
+    const updated = sort_custom_trackers([...customTrackers, newTracker]);
+    setCustomTrackers(updated);
+    if (userIdRef.current) {
+      saveHomeCache(userIdRef.current, entries.current, updated);
+    }
   };
 
   const customCalendarRendering = (arg: any) => {
@@ -964,7 +1147,11 @@ const Home = () => {
       throw error;
     }
 
-    setCustomTrackers(sort_custom_trackers(customTrackers.map((tracker: CustomTracker) => tracker.name === custom_tracker_name ? { ...tracker, icon_classname } : tracker)));
+    const updated = sort_custom_trackers(customTrackers.map((tracker: CustomTracker) => tracker.name === custom_tracker_name ? { ...tracker, icon_classname } : tracker));
+    setCustomTrackers(updated);
+    if (userIdRef.current) {
+      saveHomeCache(userIdRef.current, entries.current, updated);
+    }
   };
 
   const fileUploadHandler = async (e: any) => {
@@ -1100,6 +1287,7 @@ const Home = () => {
         dayMaxEvents={ true }
         select={ handleDateSelect }
         eventContent={ customCalendarRendering }
+        datesSet={ handleDatesSet }
         height="100%"
       />
 
