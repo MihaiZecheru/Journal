@@ -14,7 +14,7 @@ import { GetUserID } from '../database/GetUser';
 import TDateString from '../database/TDateString';
 import CustomTracker, { TCustomTrackerTypeField } from '../database/CustomTracker';
 import icons from '../icons';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import fileDownload from 'js-file-download'
 import { UserID } from '../database/ID';
 import { createShareLink } from '../database/createShareLink';
@@ -159,7 +159,9 @@ function loadCalendar(entries: Entry[], calendarAPI: any) {
 
 const Home = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const calendar = useRef<FullCalendar>(null);
+  const lastOpenedUrlDateRef = useRef<string>('');
 
   // Entry modal
   const entryModal = useRef<HTMLDivElement>(null);
@@ -508,13 +510,16 @@ const Home = () => {
         }
       }
 
-      // Determine currently focused month (defaulting to today's month in PST)
+      // Determine currently focused month (defaulting to url date if present, or today's month in PST)
       const todayStr = GetTodaysDate();
-      const [tYear, tMonth] = todayStr.split('-').map(Number);
+      const searchParams = new URLSearchParams(window.location.search);
+      const urlDate = searchParams.get('date');
+      const targetDateStr = (urlDate && /^\d{4}-\d{2}-\d{2}$/.test(urlDate)) ? urlDate : todayStr;
+      const [tYear, tMonth] = targetDateStr.split('-').map(Number);
       let targetYear = tYear;
       let targetMonthZeroIndexed = tMonth - 1;
 
-      if (calendar.current?.getApi()) {
+      if (!urlDate && calendar.current?.getApi()) {
         const calDate = calendar.current.getApi().getDate();
         if (calDate) {
           targetYear = calDate.getFullYear();
@@ -549,9 +554,25 @@ const Home = () => {
           throw trackerError;
         }
 
+        let urlSpecificEntry: Entry | null = null;
+        if (urlDate && /^\d{4}-\d{2}-\d{2}$/.test(urlDate)) {
+          const { data } = await supabase
+            .from('Entries')
+            .select()
+            .eq('user_id', userId)
+            .eq('date', urlDate)
+            .maybeSingle();
+          urlSpecificEntry = data as Entry | null;
+        }
+
         // Merge: keep all cached entries outside this month range, and replace this month with fresh entries
         const nonMonthEntries = entries.current.filter((entry: Entry) => entry.date < startStr || entry.date > endStr);
         const mergedEntries = [...nonMonthEntries, ...(freshMonthEntries ?? []) as Entry[]];
+
+        if (urlSpecificEntry && !mergedEntries.some((e: Entry) => e.date === urlDate)) {
+          mergedEntries.push(urlSpecificEntry as Entry);
+        }
+
         entries.current = mergedEntries;
 
         const updatedTrackers = freshTrackers ? sort_custom_trackers(freshTrackers as CustomTracker[]) : customTrackers;
@@ -670,8 +691,7 @@ const Home = () => {
     (entryModalRatingInput.current!.parentElement!.querySelector('span.thumb')! as HTMLSpanElement)?.style.setProperty('--current-rating-color', color);
   }
 
-  const handleDateSelect = (selectInfo: any) => {
-    const selectedDateStr = selectInfo.startStr as string;
+  const openEntryForDate = async (selectedDateStr: string, mode?: 'view' | 'edit') => {
     const [selYear, selMonth, selDay] = selectedDateStr.split('-').map(Number);
     const date = new Date(selYear, selMonth - 1, selDay);
     const weekday = weekdays[date.getDay()];
@@ -686,75 +706,79 @@ const Home = () => {
     yesterdayDate.setDate(yesterdayDate.getDate() - 1);
     const yesterdayStr = toLosAngelesDateString(yesterdayDate);
 
-    // Activate custom tracker inputs and clear input
-    document.querySelectorAll('.custom-tracker-input').forEach((input: Element) => {
-      const inputBox = input.querySelector('input') as HTMLInputElement;
-      if (inputBox?.type === 'checkbox') inputBox.checked = false;
-      else inputBox.value = '';
-      new Input(input);
-    });
-
-    // Clear custom tracker icon colors
-    document.querySelectorAll('.custom-tracker-input-icon').forEach((icon: Element) => icon.classList.remove('active-custom-tracker-color'));
-
-    // rating colors
-    entryModalRatingInput.current!.value = '5';
-    dayRatingDisplayNumber.current!.textContent = 'x';
-    setModalColor(11); // gray
-    
-    // Clear text area
-    entryModalTextArea.current!.value = '';
-
-    // Set modal title
-    entryModalTitle.current!.textContent = `${weekday}, ${month} ${selDay}`;
-    entryModalLabel.current!.textContent =
-      selectedDateStr === todayStr
-        ? 'What happened today?'
-        : selectedDateStr === yesterdayStr
-        ? 'What happened yesterday?'
-        : `What happened on ${weekday}?`;
-    entryModal.current!.setAttribute('data-startstr', selectedDateStr);
-
-    // Hide delete button
-    (entryModal.current!.querySelector('.btn-danger') as HTMLButtonElement).classList.add('visually-hidden');
-
     // Check if an entry already exists for the selected date
-    const existingEntry: Entry | null = entries.current.find((entry: Entry) => entry.date === selectedDateStr) || null;
+    let existingEntry: Entry | null = entries.current.find((entry: Entry) => entry.date === selectedDateStr) || null;
+    if (!existingEntry) {
+      try {
+        const userId = userIdRef.current || (await GetUserID());
+        const { data: specificEntry } = await supabase
+          .from('Entries')
+          .select()
+          .eq('user_id', userId)
+          .eq('date', selectedDateStr)
+          .maybeSingle();
+        if (specificEntry) {
+          existingEntry = specificEntry as Entry;
+          entries.current.push(existingEntry);
+          if (calendar.current?.getApi()) {
+            calendar.current.getApi().addEvent({
+              title: specificEntry.journal_entry,
+              start: specificEntry.date,
+              allDay: true,
+              display: specificEntry.date === GetTodaysDate() ? 'foreground' : 'background',
+              color: colors[specificEntry.rating - 1],
+              extendedProps: {
+                custom_trackers: specificEntry.custom_trackers,
+                starred: specificEntry.starred,
+              }
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching entry for date:', err);
+      }
+    }
+
+    const shouldShowView = mode === 'view' ? true : mode === 'edit' ? false : (isMoreThanSixDaysAgo && editMode === false);
 
     // Show view modal
-    if (isMoreThanSixDaysAgo && editMode === false) {
+    if (shouldShowView) {
       if (!existingEntry) return alert(`No entry exists for ${weekday}, ${month} ${selDay}`);
+      const viewedEntry = existingEntry;
       viewEntryModalTitle.current!.textContent = `${weekday}, ${month} ${selDay}`;
-      viewEntryModalRatingDisplay.current!.textContent = existingEntry.rating === 11 ? 'x' : existingEntry.rating.toString();
-      viewEntryModalStarredDisplay.current!.innerHTML = existingEntry.starred ? '<i class="fas fa-star fa-lg view-entry-modal-display-star"></i>' : '<i class="far fa-star fa-lg view-entry-modal-display-star"></i>';
-      document.querySelector('.view-entry-modal-display-star')?.addEventListener('click', async (e: any) => {
-        e.target!.classList.toggle('fas');
-        e.target!.classList.toggle('far');
-        if (!existingEntry.starred) {
-          existingEntry.starred = true;
-          await SetStarredValue(await GetUserID(), existingEntry.date, true);
-        } else {
-          existingEntry.starred = false;
-          await SetStarredValue(await GetUserID(), existingEntry.date, false);
-        }
-        calendar.current!.getApi().getEvents().find((event: any) => event.startStr === existingEntry.date)!.setExtendedProp('starred', existingEntry.starred);
-        entries.current = entries.current.map((entry: Entry) => entry.date === existingEntry.date ? { ...entry, starred: existingEntry.starred } : entry);
-        if (userIdRef.current) {
-          saveHomeCache(userIdRef.current, entries.current, customTrackers);
-        }
-      });
-      const color = colors[existingEntry.rating - 1];
-      currentViewEntry.current = existingEntry;
+      viewEntryModalRatingDisplay.current!.textContent = viewedEntry.rating === 11 ? 'x' : viewedEntry.rating.toString();
+      viewEntryModalStarredDisplay.current!.innerHTML = viewedEntry.starred ? '<i class="fas fa-star fa-lg view-entry-modal-display-star"></i>' : '<i class="far fa-star fa-lg view-entry-modal-display-star"></i>';
+      const starEl = document.querySelector('.view-entry-modal-display-star');
+      if (starEl) {
+        (starEl as HTMLElement).onclick = async (e: any) => {
+          e.target!.classList.toggle('fas');
+          e.target!.classList.toggle('far');
+          if (!viewedEntry.starred) {
+            viewedEntry.starred = true;
+            await SetStarredValue(await GetUserID(), viewedEntry.date, true);
+          } else {
+            viewedEntry.starred = false;
+            await SetStarredValue(await GetUserID(), viewedEntry.date, false);
+          }
+          calendar.current!.getApi().getEvents().find((event: any) => event.startStr === viewedEntry.date)?.setExtendedProp('starred', viewedEntry.starred);
+          entries.current = entries.current.map((entry: Entry) => entry.date === viewedEntry.date ? { ...entry, starred: viewedEntry.starred } : entry);
+          if (userIdRef.current) {
+            saveHomeCache(userIdRef.current, entries.current, customTrackers);
+          }
+        };
+      }
+      const color = colors[viewedEntry.rating - 1] || colors[10];
+      currentViewEntry.current = viewedEntry;
       setShareEntryLabel('Share');
       viewShareCache.current = null;
-			viewEntryModal.current!.setAttribute('data-startstr', existingEntry.date);
+      viewEntryModal.current!.setAttribute('data-startstr', viewedEntry.date);
       viewEntryModalTitle.current!.parentElement!.style.backgroundColor = color;
       viewEntryModalBody.current!.innerHTML = `
-        <div class="mb-2 view-entry-text-content-box"><span>${existingEntry.journal_entry}</span></div>
+        <div class="mb-2 view-entry-text-content-box"><span>${viewedEntry.journal_entry}</span></div>
         <div class="mb-2">
           ${
-            existingEntry.custom_trackers ? customTrackers.map((custom_tracker: CustomTracker) => {
-              const value = existingEntry.custom_trackers![custom_tracker.name];
+            viewedEntry.custom_trackers ? customTrackers.map((custom_tracker: CustomTracker) => {
+              const value = viewedEntry.custom_trackers![custom_tracker.name];
               const isCheckbox = value === true || value === false;
               if (isCheckbox) {
                 return `<div class="d-flex align-items-center mt-2"><i class="fa-lg me-2 ${value === true ? 'active-custom-tracker-color' : ''} ${customTrackers.find((tracker: CustomTracker) => tracker.name === custom_tracker.name)?.icon_classname}"></i><span>${custom_tracker.name}</span></div>`;
@@ -770,7 +794,7 @@ const Home = () => {
       (async () => {
         try {
           const userID = await GetUserID();
-          const targetFolder = `${piStorage.defaultFolder}/${userID}/${existingEntry.date}`;
+          const targetFolder = `${piStorage.defaultFolder}/${userID}/${viewedEntry.date}`;
           const tree = await piStorage.getDirectoryTree(targetFolder);
 
           if (!tree.files || !tree.files.length) {
@@ -780,7 +804,7 @@ const Home = () => {
               name: file.name,
               url: piStorage.getFileUrl(file.viewUrl || file.relativePath),
               thumbnail_url: piStorage.getThumbnailUrl(file.thumbnailUrl || file.relativePath),
-              date: existingEntry.date,
+              date: viewedEntry.date,
               relativePath: file.relativePath,
             })));
           }
@@ -793,22 +817,54 @@ const Home = () => {
       return new Modal(viewEntryModal.current).show();
     // Show create/edit entry modal
     } else {
+      // Activate custom tracker inputs and clear input
+      document.querySelectorAll('.custom-tracker-input').forEach((input: Element) => {
+        const inputBox = input.querySelector('input') as HTMLInputElement;
+        if (inputBox?.type === 'checkbox') inputBox.checked = false;
+        else inputBox.value = '';
+        new Input(input);
+      });
+
+      // Clear custom tracker icon colors
+      document.querySelectorAll('.custom-tracker-input-icon').forEach((icon: Element) => icon.classList.remove('active-custom-tracker-color'));
+
+      // rating colors
+      entryModalRatingInput.current!.value = '5';
+      dayRatingDisplayNumber.current!.textContent = 'x';
+      setModalColor(11); // gray
+      
+      // Clear text area
+      entryModalTextArea.current!.value = '';
+
+      // Set modal title
+      entryModalTitle.current!.textContent = `${weekday}, ${month} ${selDay}`;
+      entryModalLabel.current!.textContent =
+        selectedDateStr === todayStr
+          ? 'What happened today?'
+          : selectedDateStr === yesterdayStr
+          ? 'What happened yesterday?'
+          : `What happened on ${weekday}?`;
+      entryModal.current!.setAttribute('data-startstr', selectedDateStr);
+
+      // Hide delete button
+      (entryModal.current!.querySelector('.btn-danger') as HTMLButtonElement).classList.add('visually-hidden');
+
       setShareEditLabel('Share');
       editShareCache.current = null;
+
       // Check for any locally saved draft when creating an entry
-      // Open the entryModal with the locally saved draft
       const locallySavedEntryData = window.localStorage.getItem("entry-modal-draft");
       if (!existingEntry && locallySavedEntryData && JSON.parse(locallySavedEntryData).date == entryModalTitle.current!.textContent && JSON.parse(locallySavedEntryData).draft.length > 0) {
         const useLocalDraft = window.confirm("Unsaved local changes have been detected. Do you want to load them?");
         if (useLocalDraft) {
           entryModalTextArea.current!.value = JSON.parse(locallySavedEntryData).draft;
         }
-        
         return new Modal(entryModal.current).show();
       }
 
       // Open the entryModal in its empty state
       if (!existingEntry) return new Modal(entryModal.current).show();
+      const editingEntry = existingEntry;
 
       // Check for any locally saved draft when editing an entry
       if (locallySavedEntryData && JSON.parse(locallySavedEntryData).date == entryModalTitle.current!.textContent && JSON.parse(locallySavedEntryData).draft.length > 0) {
@@ -817,48 +873,52 @@ const Home = () => {
           entryModalTextArea.current!.value = JSON.parse(locallySavedEntryData).draft;
         } else {
           // Set textarea to existing entry
-          entryModalTextArea.current!.value = existingEntry.journal_entry;
+          entryModalTextArea.current!.value = editingEntry.journal_entry;
           window.localStorage.removeItem("entry-modal-draft");
         }
       } else {
         // Set textarea to existing entry
-        entryModalTextArea.current!.value = existingEntry.journal_entry;
+        entryModalTextArea.current!.value = editingEntry.journal_entry;
       }
 
       // Set slider to existing rating
-      let existingRating = existingEntry.rating;
+      let existingRating = editingEntry.rating;
 
       // Set modal color
       entryModalRatingInput.current!.value = (existingRating === 11 ? 5 : existingRating).toString();
       dayRatingDisplayNumber.current!.textContent = existingRating === 11 ? 'x' : existingRating.toString();
-      entryModalStarredDisplay.current!.innerHTML = existingEntry.starred
+      entryModalStarredDisplay.current!.innerHTML = editingEntry.starred
         ? '<i class="fas fa-star fa-lg entry-modal-display-star"></i>'
         : '<i class="far fa-star fa-lg entry-modal-display-star"></i>';
-        document.querySelector('.entry-modal-display-star')?.addEventListener('click', async (e: any) => {
+      
+      const starEl = document.querySelector('.entry-modal-display-star');
+      if (starEl) {
+        (starEl as HTMLElement).onclick = async (e: any) => {
           e.target!.classList.toggle('fas');
           e.target!.classList.toggle('far');
-          if (!existingEntry.starred) {
-            existingEntry.starred = true;
-            await SetStarredValue(await GetUserID(), existingEntry.date, true);
+          if (!editingEntry.starred) {
+            editingEntry.starred = true;
+            await SetStarredValue(await GetUserID(), editingEntry.date, true);
           } else {
-            existingEntry.starred = false;
-            await SetStarredValue(await GetUserID(), existingEntry.date, false);
+            editingEntry.starred = false;
+            await SetStarredValue(await GetUserID(), editingEntry.date, false);
           }
-          calendar.current!.getApi().getEvents().find((event: any) => event.startStr === existingEntry.date)!.setExtendedProp('starred', existingEntry.starred);
-          entries.current = entries.current.map((entry: Entry) => entry.date === existingEntry.date ? { ...entry, starred: existingEntry.starred } : entry);
+          calendar.current!.getApi().getEvents().find((event: any) => event.startStr === editingEntry.date)?.setExtendedProp('starred', editingEntry.starred);
+          entries.current = entries.current.map((entry: Entry) => entry.date === editingEntry.date ? { ...entry, starred: editingEntry.starred } : entry);
           if (userIdRef.current) {
             saveHomeCache(userIdRef.current, entries.current, customTrackers);
           }
-        });
+        };
+      }
       setModalColor(existingRating);
 
       // Show delete button
       (entryModal.current!.querySelector('.btn-danger') as HTMLButtonElement).classList.remove('visually-hidden');
 
       // Set custom trackers
-      if (existingEntry.custom_trackers) {
-        Object.keys(existingEntry.custom_trackers).forEach((key: string) => {
-          const value = existingEntry.custom_trackers![key];
+      if (editingEntry.custom_trackers) {
+        Object.keys(editingEntry.custom_trackers).forEach((key: string) => {
+          const value = editingEntry.custom_trackers![key];
           const input = document.querySelector(`.custom-tracker-input[data-tracker-name="${key}"] input`) as HTMLInputElement;
           if (input === null) return;
           if (input.type === 'checkbox') {
@@ -877,7 +937,7 @@ const Home = () => {
       (async () => {
         try {
           const userID = await GetUserID();
-          const targetFolder = `${piStorage.defaultFolder}/${userID}/${existingEntry.date}`;
+          const targetFolder = `${piStorage.defaultFolder}/${userID}/${editingEntry.date}`;
           const tree = await piStorage.getDirectoryTree(targetFolder);
 
           if (!tree.files || !tree.files.length) {
@@ -887,7 +947,7 @@ const Home = () => {
               name: file.name,
               url: piStorage.getFileUrl(file.viewUrl || file.relativePath),
               thumbnail_url: piStorage.getThumbnailUrl(file.thumbnailUrl || file.relativePath),
-              date: existingEntry.date,
+              date: editingEntry.date,
               relativePath: file.relativePath,
             })));
           }
@@ -901,6 +961,27 @@ const Home = () => {
       new Modal(entryModal.current).show();
     }
   };
+
+  const handleDateSelect = (selectInfo: any) => {
+    openEntryForDate(selectInfo.startStr as string);
+  };
+
+  useEffect(() => {
+    if (loading) return;
+    const searchParams = new URLSearchParams(location.search);
+    const urlDate = searchParams.get('date');
+    const urlMode = searchParams.get('mode') as 'view' | 'edit' | null;
+    if (urlDate && /^\d{4}-\d{2}-\d{2}$/.test(urlDate)) {
+      const key = `${urlDate}-${urlMode || ''}`;
+      if (lastOpenedUrlDateRef.current === key) return;
+      lastOpenedUrlDateRef.current = key;
+
+      calendar.current?.getApi()?.gotoDate(urlDate);
+      setTimeout(() => {
+        openEntryForDate(urlDate, urlMode || undefined);
+      }, 150);
+    }
+  }, [loading, location.search]);
 
   const handleSelectAllow = (selectInfo: any) => {
     // Prevent the selection of multiple days at once
@@ -1279,6 +1360,7 @@ const Home = () => {
         }}
         weekends={ true }
         initialView="dayGridMonth"
+        initialDate={ (new URLSearchParams(window.location.search).get('date')) || undefined }
         plugins={[ dayGridMonth, interactionPlugin ]}
         ref={ calendar }
         editable={ true }
@@ -1578,6 +1660,14 @@ const Home = () => {
                   viewEntryMemoriesModalDateDisplay.current!.textContent = `${months[parseInt(date.split('-')[1]) - 1]} ${date.split('-')[2]}, ${date.substring(0, 4)}`;
                   new Modal(viewEntryMemoriesModal.current!).show();
                 }}><span>View Memories</span><span className="badge rounded-pill badge-dark ms-2">{ viewMemoriesModalFiles.length }</span></button>
+                <button type="button" className="btn btn-primary" data-mdb-ripple-init onClick={ () => {
+                  const date = viewEntryModal.current!.getAttribute('data-startstr')!;
+                  const closeBtn = viewEntryModal.current?.querySelector('button[data-mdb-dismiss="modal"]') as HTMLButtonElement;
+                  if (closeBtn) closeBtn.click();
+                  setTimeout(() => {
+                    openEntryForDate(date, 'edit');
+                  }, 200);
+                }}><i className="fas fa-edit me-1"></i>Edit</button>
                 <button type="button" className="btn btn-danger" data-mdb-ripple-init data-mdb-dismiss="modal" onClick={() => {
                   const proceed = window.confirm('Are you sure you want to delete this entry?');
                   if (proceed) entryModalDelete(viewEntryModal.current!.getAttribute('data-startstr')!);

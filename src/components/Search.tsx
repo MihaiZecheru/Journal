@@ -5,10 +5,15 @@ import { GetUserID } from "../database/GetUser";
 import Loading from "./Loading";
 import supabase from "../database/config/supabase";
 import { useNavigate } from "react-router-dom";
+import { createShareLink } from "../database/createShareLink";
+import { createBebShortUrl } from "../lib/beb";
+import ShortUrlModal from "./ShortUrlModal";
 import '../styles/search.css';
 
 const COLORS = ['#FF3B30', '#FF6835', '#FF9F00', '#FFD000', '#F5F000', '#BCEC00', '#72D900', '#2DBD55', '#00B84C', '#30E070', '#bdbdbd']; // gray at the end
 
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const MONTH_NAMES = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
 const WEEKDAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 // months are 1-indexed; endMonth0 is 0-indexed (for comparing against Date.getMonth())
@@ -444,6 +449,41 @@ const Search = () => {
   const bodyRefs = useRef<(HTMLParagraphElement | null)[]>([]);
   const infoAreaRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const [contextMenu, setContextMenu] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    entry: Entry | null;
+  }>({ visible: false, x: 0, y: 0, entry: null });
+
+  // Short URL Modal state
+  const [shortUrlModalOpen, setShortUrlModalOpen] = useState<boolean>(false);
+  const [isGeneratingShortUrl, setIsGeneratingShortUrl] = useState<boolean>(false);
+  const [shortUrlData, setShortUrlData] = useState<{ shortUrl: string | null; destinationUrl: string } | null>(null);
+  const [shortUrlError, setShortUrlError] = useState<string | null>(null);
+  const shortUrlCache = useRef<Record<string, string>>({});
+  const shareEntryCache = useRef<Record<string, { url: string; time: number }>>({});
+
+  useEffect(() => {
+    const handleGlobalClick = () => {
+      if (contextMenu.visible) {
+        setContextMenu({ visible: false, x: 0, y: 0, entry: null });
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && contextMenu.visible) {
+        setContextMenu({ visible: false, x: 0, y: 0, entry: null });
+      }
+    };
+    window.addEventListener('click', handleGlobalClick);
+    window.addEventListener('scroll', handleGlobalClick, true);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('click', handleGlobalClick);
+      window.removeEventListener('scroll', handleGlobalClick, true);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [contextMenu.visible]);
 
   useEffect(() => {
     (async () => {
@@ -621,6 +661,102 @@ const Search = () => {
     });
   };
 
+  const handleShareEntry = async (entry: Entry) => {
+    setContextMenu({ visible: false, x: 0, y: 0, entry: null });
+
+    const [selYear, selMonth, selDay] = entry.date.split('-').map(Number);
+    const dateObj = new Date(selYear, selMonth - 1, selDay);
+    const weekday = WEEKDAYS[dateObj.getDay()];
+    const month = MONTHS[selMonth - 1];
+    const title = `${weekday}, ${month} ${selDay}`;
+
+    setShortUrlModalOpen(true);
+    setIsGeneratingShortUrl(true);
+    setShortUrlError(null);
+    setShortUrlData(null);
+
+    let destinationUrl: string;
+    try {
+      const cachedShare = shareEntryCache.current[entry.date];
+      if (cachedShare && Date.now() - cachedShare.time < 30_000) {
+        destinationUrl = cachedShare.url;
+      } else {
+        destinationUrl = await createShareLink('entry', title, entry.journal_entry);
+        shareEntryCache.current[entry.date] = { url: destinationUrl, time: Date.now() };
+      }
+    } catch (err: any) {
+      console.error('Failed to create share link:', err);
+      setShortUrlModalOpen(false);
+      setIsGeneratingShortUrl(false);
+      alert('Failed to create share link.');
+      return;
+    }
+
+    // Check if short URL is already cached for this destination URL
+    if (shortUrlCache.current[destinationUrl]) {
+      const cachedShortUrl = shortUrlCache.current[destinationUrl];
+      setShortUrlData({
+        shortUrl: cachedShortUrl,
+        destinationUrl,
+      });
+      setIsGeneratingShortUrl(false);
+      try {
+        await navigator.clipboard.writeText(cachedShortUrl);
+      } catch (cErr) {
+        console.warn('Clipboard write error:', cErr);
+      }
+      return;
+    }
+
+    setShortUrlData({
+      shortUrl: null,
+      destinationUrl,
+    });
+
+    try {
+      const bebRes = await createBebShortUrl(destinationUrl);
+      shortUrlCache.current[destinationUrl] = bebRes.shortUrl;
+      setShortUrlData({
+        shortUrl: bebRes.shortUrl,
+        destinationUrl,
+      });
+      setIsGeneratingShortUrl(false);
+      try {
+        await navigator.clipboard.writeText(bebRes.shortUrl);
+      } catch (cErr) {
+        console.warn('Clipboard write error:', cErr);
+      }
+    } catch (err: any) {
+      console.error('Failed to create short URL:', err);
+      setShortUrlError(err.message || 'Short URL service is currently unreachable.');
+      setShortUrlData({
+        shortUrl: null,
+        destinationUrl,
+      });
+      setIsGeneratingShortUrl(false);
+      try {
+        await navigator.clipboard.writeText(destinationUrl);
+      } catch (cErr) {
+        console.warn('Clipboard write error:', cErr);
+      }
+    }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent, entry: Entry) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const menuWidth = 150;
+    const menuHeight = 135;
+    const x = e.clientX + menuWidth > window.innerWidth ? Math.max(10, window.innerWidth - menuWidth - 10) : e.clientX;
+    const y = e.clientY + menuHeight > window.innerHeight ? Math.max(10, window.innerHeight - menuHeight - 10) : e.clientY;
+    setContextMenu({
+      visible: true,
+      x,
+      y,
+      entry,
+    });
+  };
+
   if (loading) {
     return <Loading />;
   }
@@ -739,6 +875,7 @@ const Search = () => {
                 className="search-result-card"
                 style={{ borderLeftColor: color, cursor: expandableIndices.has(index) ? 'pointer' : 'default' }}
                 onClick={() => expandableIndices.has(index) && toggleExpanded(index)}
+                onContextMenu={(e) => handleContextMenu(e, entry)}
               >
                 <div className="search-result-header">
                   <span className="search-result-date" style={{ color }}>
@@ -761,6 +898,56 @@ const Search = () => {
           })}
         </div>
       )}
+
+      {contextMenu.visible && contextMenu.entry && (
+        <div
+          className="search-context-menu"
+          style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <ul>
+            <li>
+              <a
+                href={`/home?date=${contextMenu.entry.date}&mode=view`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setContextMenu({ visible: false, x: 0, y: 0, entry: null })}
+              >
+                <i className="fas fa-book-open"></i>View
+              </a>
+            </li>
+            <li>
+              <a
+                href={`/home?date=${contextMenu.entry.date}&mode=edit`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setContextMenu({ visible: false, x: 0, y: 0, entry: null })}
+              >
+                <i className="fas fa-pen-to-square"></i>Edit
+              </a>
+            </li>
+            <li>
+              <button
+                type="button"
+                onClick={() => handleShareEntry(contextMenu.entry!)}
+              >
+                <i className="fas fa-share-nodes"></i>Share
+              </button>
+            </li>
+          </ul>
+        </div>
+      )}
+
+      <ShortUrlModal
+        isOpen={shortUrlModalOpen}
+        isLoading={isGeneratingShortUrl}
+        shortUrl={shortUrlData?.shortUrl ?? null}
+        destinationUrl={shortUrlData?.destinationUrl ?? null}
+        error={shortUrlError}
+        onClose={() => setShortUrlModalOpen(false)}
+        successSubtitle="24-hour short link generated & copied to clipboard:"
+        errorSubtitle="Short URL generation failed. Full share link copied to clipboard:"
+      />
     </div>
   );
 }

@@ -518,3 +518,66 @@ mark.search-highlight,
     font-size: 0.85rem;
   }
 }
+
+/* ─── Context Menu ───────────────────────────────────────────────────── */
+.search-context-menu {
+  position: fixed;
+  z-index: 10000;
+  background: #1e293b;
+  color: #f8fafc;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  border-radius: 10px;
+  padding: 6px 0;
+  min-width: 150px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  animation: searchContextMenuFadeIn 0.15s ease;
+}
+
+@keyframes searchContextMenuFadeIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.search-context-menu ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.search-context-menu li {
+  margin: 0;
+  padding: 0;
+}
+
+.search-context-menu li a,
+.search-context-menu li button {
+  padding: 10px 16px;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  color: #f8fafc;
+  text-decoration: none;
+  width: 100%;
+  box-sizing: border-box;
+  background: none;
+  border: none;
+  text-align: left;
+  font-family: inherit;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.search-context-menu li a:hover,
+.search-context-menu li button:hover {
+  background-color: #334155;
+  color: #60a5fa;
+}
+
+.search-context-menu li a i,
+.search-context-menu li button i {
+  width: 22px;
+  margin-right: 8px;
+  color: inherit;
+}
+
+
