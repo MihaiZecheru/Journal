@@ -1,7 +1,9 @@
 # 📖 Journal
 
 > **Remember every day.** A simple journaling web app to log daily thoughts, revisit past memories, and generate AI-powered monthly summaries.
-I used AI for the Memories feature. Everything else was made by me only.
+
+I used AI for the Memories feature. Everything else was made without AI.
+
 ---
 
 ## Features
