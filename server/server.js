@@ -18,7 +18,14 @@ const build_name = '../build';
 
 const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || process.env.SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+const SUPABASE_API_KEY = (
+  process.env.SUPABASE_SECRET_KEY ||
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.SUPABASE_PUBLISHABLE_KEY ||
+  process.env.REACT_APP_SUPABASE_PUBLISHABLE_KEY ||
+  process.env.REACT_APP_SUPABASE_ANON_KEY ||
+  process.env.SUPABASE_ANON_KEY
+);
 const SUMMARY_MODEL = process.env.GEMINI_SUMMARY_MODEL || 'gemini-3.5-flash';
 const SEARCH_MODEL = 'gemini-3.5-flash';
 
@@ -116,8 +123,8 @@ async function requireAuth(req, res, next) {
       return res.status(401).json({ error: 'Unauthorized: Empty token' });
     }
 
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-      console.error('Server configuration error: SUPABASE_URL or SUPABASE_ANON_KEY missing in environment');
+    if (!SUPABASE_URL || !SUPABASE_API_KEY) {
+      console.error('Server configuration error: SUPABASE_URL or SUPABASE_API_KEY missing in environment');
       return res.status(500).json({ error: 'Server authentication configuration error' });
     }
 
@@ -125,7 +132,7 @@ async function requireAuth(req, res, next) {
     const userRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
       method: 'GET',
       headers: {
-        'apikey': SUPABASE_ANON_KEY,
+        'apikey': SUPABASE_API_KEY,
         'Authorization': `Bearer ${token}`,
       },
     });

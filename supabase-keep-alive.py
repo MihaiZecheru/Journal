@@ -17,7 +17,12 @@ def load_env_manually():
 load_env_manually()
 
 url = "https://fjzxcqdrvjvtiatfluqz.supabase.co/health"
-apikey = os.environ.get("REACT_APP_SUPABASE_ANON_KEY") or ""
+apikey = (
+    os.environ.get("SUPABASE_PUBLISHABLE_KEY")
+    or os.environ.get("REACT_APP_SUPABASE_PUBLISHABLE_KEY")
+    or os.environ.get("REACT_APP_SUPABASE_ANON_KEY")
+    or ""
+)
 
 headers = {
     "apikey": apikey,

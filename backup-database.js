@@ -3,12 +3,12 @@ import path from 'path';
 import 'dotenv/config';
 
 const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || process.env.SUPABASE_URL;
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const BACKUP_DIR = '/home/Journal/db-backups';
 const KEEP_DAYS = 14;
 
 if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
-  console.error('Missing REACT_APP_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env');
+  console.error('Missing SUPABASE_URL or SUPABASE_SECRET_KEY / SUPABASE_SERVICE_ROLE_KEY in .env');
   process.exit(1);
 }
 
