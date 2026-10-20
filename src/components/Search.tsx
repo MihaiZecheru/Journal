@@ -8,6 +8,7 @@ import { useNavigate } from "react-router-dom";
 import { createShareLink } from "../database/createShareLink";
 import { createBebShortUrl } from "../lib/beb";
 import ShortUrlModal from "./ShortUrlModal";
+import { getAuthHeaders } from "../database/getAuthHeaders";
 import '../styles/search.css';
 
 const COLORS = ['#FF3B30', '#FF6835', '#FF9F00', '#FFD000', '#F5F000', '#BCEC00', '#72D900', '#2DBD55', '#00B84C', '#30E070', '#bdbdbd']; // gray at the end
@@ -55,9 +56,10 @@ function isDateSearch(str: string): boolean {
 // ─── AI search ───────────────────────────────────────────────────────
 
 async function expandSearchKeywords(question: string, signal: AbortSignal): Promise<string[]> {
+  const headers = await getAuthHeaders();
   const res = await fetch('https://journal.mzecheru.com/api/generate-search-keywords', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ question }),
     signal,
   });
@@ -125,9 +127,10 @@ async function runAiSearch(question: string, entries: Entry[], signal: AbortSign
   timeoutController.signal.addEventListener('abort', abort);
 
   try {
+    const headers = await getAuthHeaders();
     const res = await fetch('https://journal.mzecheru.com/api/ai-search', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         question,
         entries: entries.map(e => ({ date: e.date, entry: e.journal_entry })),
@@ -575,7 +578,7 @@ const Search = () => {
         const controller = new AbortController();
         abortControllerRef.current = controller;
         try {
-          const MAX_ENTRIES = 730;
+          const MAX_ENTRIES = 100;
           let relevant: Entry[];
           const timeFiltered = getTimeFilteredEntries(question, allEntries!);
           const hasTime = timeFiltered !== null && timeFiltered.length > 0;

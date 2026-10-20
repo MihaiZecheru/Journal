@@ -2,8 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import 'dotenv/config';
 
-const SUPABASE_URL = "https://fjzxcqdrvjvtiatfluqz.supabase.co";
-const SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZqenhjcWRydmp2dGlhdGZsdXF6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTcyMTA5ODA5MywiZXhwIjoyMDM2Njc0MDkzfQ.zxeJXateM3IYT_zNNtou9r7Rjy8M7Z3JcFew6XIrBrQ";
+const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || process.env.SUPABASE_URL;
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const BACKUP_DIR = '/home/Journal/db-backups';
 const KEEP_DAYS = 14;

@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import supabase from "../database/config/supabase";
 import { GetUserID } from "../database/GetUser";
 import { createShareLink } from "../database/createShareLink";
+import { getAuthHeaders } from "../database/getAuthHeaders";
 
 function capitalizeFirstLetter(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
@@ -11,11 +12,10 @@ function capitalizeFirstLetter(s: string) {
 
 async function GenerateSummary(entries: string[]): Promise<string | null> {
   try {
+    const headers = await getAuthHeaders();
     const res = await fetch('https://journal.mzecheru.com/api/generate-summary', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers,
       body: JSON.stringify({ entries })
     });
 

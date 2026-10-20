@@ -1,3 +1,5 @@
+import { getAuthHeaders } from '../database/getAuthHeaders';
+
 /**
  * Generates a random hexadecimal ID of the specified length (default 9 digits).
  */
@@ -39,6 +41,7 @@ export async function createBebShortUrl(
 
   let lastError: any = null;
   const maxAttempts = 3;
+  const authHeaders = await getAuthHeaders().catch(() => ({ 'Content-Type': 'application/json' }));
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const alias = customAlias || generateRandomHexId(9);
@@ -48,9 +51,7 @@ export async function createBebShortUrl(
       try {
         const res = await fetch(endpoint, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: authHeaders,
           body: JSON.stringify({
             url: targetUrl,
             alias,
