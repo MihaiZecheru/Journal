@@ -3,6 +3,8 @@
 import express from 'express';
 import path from 'path';
 import cors from 'cors';
+import https from 'https';
+import http from 'http';
 import { GoogleGenAI } from "@google/genai";
 import { fileURLToPath } from 'url';
 import 'dotenv/config';
@@ -20,14 +22,18 @@ const SUPABASE_ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY || process.env
 const SUMMARY_MODEL = process.env.GEMINI_SUMMARY_MODEL || 'gemini-3.5-flash';
 const SEARCH_MODEL = 'gemini-3.5-flash';
 
+const PISTORAGE_URL = (process.env.PISTORAGE_URL || 'https://storage.mzecheru.com').replace(/\/+$/, '');
+const PISTORAGE_API_KEY = process.env.PISTORAGE_API_KEY || '';
+
 // ─── Security: CORS ───────────────────────────────────────────────────────────
 app.use(cors({
   origin: [
     'http://localhost:3000',
     'https://journal.mzecheru.com'
   ],
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Range'],
+  exposedHeaders: ['Content-Range', 'Accept-Ranges', 'Content-Length', 'Content-Type'],
 }));
 
 // Limit request body payload size to 256KB to block multi-megabyte flood attacks
@@ -76,14 +82,26 @@ function createRateLimiter({ windowMs, max, message }) {
   };
 }
 
-// Limit /api/* endpoints to 30 requests per 15 minutes per IP
-const apiLimiter = createRateLimiter({
+// Stricter limiter for costly AI operations (30 requests / 15 minutes per IP)
+const aiLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 30,
-  message: 'Rate limit exceeded for API endpoints. Please wait before making more requests.',
+  message: 'Rate limit exceeded for AI endpoints. Please wait before making more requests.',
 });
 
-app.use('/api/', apiLimiter);
+// General limiter for storage API & short URL actions (300 requests / 15 minutes per IP)
+const generalApiLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  message: 'Rate limit exceeded. Please wait before making more requests.',
+});
+
+app.use('/api/generate-summary', aiLimiter);
+app.use('/api/ai-search', aiLimiter);
+app.use('/api/generate-search-keywords', aiLimiter);
+app.use('/api/create-short-url', generalApiLimiter);
+app.use('/api/storage/api/', generalApiLimiter);
+app.use('/api/storage/upload', generalApiLimiter);
 
 // ─── Security: Supabase Authentication Middleware ─────────────────────────────
 async function requireAuth(req, res, next) {
@@ -128,6 +146,97 @@ async function requireAuth(req, res, next) {
     return res.status(401).json({ error: 'Authentication verification failed' });
   }
 }
+
+// ─── PiStorage Proxy ──────────────────────────────────────────────────────────
+// Securely proxies media (view and thumb) injecting server's PISTORAGE_API_KEY
+function proxyPiStorageMedia(req, res, prefix) {
+  if (!PISTORAGE_API_KEY) {
+    return res.status(500).json({ error: 'PiStorage API key not configured on server' });
+  }
+
+  const subPath = req.params[0] || '';
+  const parsedTarget = new URL(`${prefix}${subPath}`, PISTORAGE_URL);
+  const client = parsedTarget.protocol === 'https:' ? https : http;
+
+  const proxyReq = client.request(parsedTarget, {
+    method: 'GET',
+    headers: {
+      'x-api-key': PISTORAGE_API_KEY,
+      'Accept': req.headers['accept'] || '*/*',
+      ...(req.headers['range'] ? { 'Range': req.headers['range'] } : {}),
+    },
+  }, (proxyRes) => {
+    const headers = { ...proxyRes.headers };
+    if (!headers['cache-control']) {
+      headers['cache-control'] = 'public, max-age=86400';
+    }
+    res.writeHead(proxyRes.statusCode, headers);
+    proxyRes.pipe(res);
+  });
+
+  proxyReq.on('error', (err) => {
+    console.error('Error streaming media from PiStorage:', err.message);
+    if (!res.headersSent) {
+      res.status(502).json({ error: 'Failed to stream media from storage server' });
+    }
+  });
+
+  proxyReq.end();
+}
+
+app.get('/api/storage/view/*', (req, res) => {
+  proxyPiStorageMedia(req, res, '/view/');
+});
+
+app.get('/api/storage/thumb/*', (req, res) => {
+  proxyPiStorageMedia(req, res, '/thumb/');
+});
+
+// Proxies API & upload requests to PiStorage with authentication & server API key
+app.all('/api/storage/*', requireAuth, (req, res) => {
+  if (!PISTORAGE_API_KEY) {
+    return res.status(500).json({ error: 'PiStorage API key not configured on server' });
+  }
+
+  const subPath = req.originalUrl.replace(/^\/api\/storage/, '');
+  const parsedTarget = new URL(subPath, PISTORAGE_URL);
+  const client = parsedTarget.protocol === 'https:' ? https : http;
+
+  const forwardHeaders = {
+    ...req.headers,
+    host: parsedTarget.host,
+    'x-api-key': PISTORAGE_API_KEY,
+  };
+  delete forwardHeaders['authorization'];
+
+  const proxyReq = client.request(parsedTarget, {
+    method: req.method,
+    headers: forwardHeaders,
+  }, (proxyRes) => {
+    res.writeHead(proxyRes.statusCode, proxyRes.headers);
+    proxyRes.pipe(res);
+  });
+
+  proxyReq.on('error', (err) => {
+    console.error('Error proxying to PiStorage:', err.message);
+    if (!res.headersSent) {
+      res.status(502).json({ error: 'Failed to communicate with storage server' });
+    }
+  });
+
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    if (req.body && Object.keys(req.body).length > 0 && req.is('application/json')) {
+      const bodyData = JSON.stringify(req.body);
+      proxyReq.setHeader('Content-Length', Buffer.byteLength(bodyData));
+      proxyReq.write(bodyData);
+      proxyReq.end();
+    } else {
+      req.pipe(proxyReq);
+    }
+  } else {
+    proxyReq.end();
+  }
+});
 
 // ─── AI Logic ─────────────────────────────────────────────────────────────────
 

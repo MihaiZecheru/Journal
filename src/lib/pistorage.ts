@@ -1,3 +1,5 @@
+import { getAuthHeaders } from '../database/getAuthHeaders';
+
 export interface PiStorageConfig {
   baseUrl: string;
   apiKey: string;
@@ -274,12 +276,11 @@ export class PiStorageClient {
       config?.baseUrl ||
       process.env.REACT_APP_PISTORAGE_URL ||
       process.env.PISTORAGE_URL ||
-      'https://storage.mzecheru.com'
+      (typeof window !== 'undefined' && window.location ? `${window.location.origin}/api/storage` : 'https://journal.mzecheru.com/api/storage')
     ).replace(/\/+$/, '');
 
     this.apiKey =
       config?.apiKey ||
-      process.env.REACT_APP_PISTORAGE_API_KEY ||
       process.env.PISTORAGE_API_KEY ||
       '';
 
@@ -288,13 +289,20 @@ export class PiStorageClient {
       process.env.REACT_APP_PISTORAGE_DEFAULT_FOLDER ||
       process.env.PISTORAGE_DEFAULT_FOLDER ||
       '/journal';
-
-    if (!this.apiKey) {
-      console.warn('[PiStorageClient] Warning: PiStorage API key is not configured.');
-    }
   }
 
-  private get headers(): Record<string, string> {
+  async getHeaders(): Promise<Record<string, string>> {
+    const h: Record<string, string> = {};
+    if (this.apiKey) {
+      h['X-API-Key'] = this.apiKey;
+    } else {
+      const auth = await getAuthHeaders().catch(() => ({}));
+      Object.assign(h, auth);
+    }
+    return h;
+  }
+
+  get headers(): Record<string, string> {
     const h: Record<string, string> = {};
     if (this.apiKey) {
       h['X-API-Key'] = this.apiKey;
@@ -355,10 +363,11 @@ export class PiStorageClient {
       return { duplicates: {} };
     }
 
+    const authHeaders = await this.getHeaders();
     const res = await fetch(`${this.baseUrl}/api/check-hashes`, {
       method: 'POST',
       headers: {
-        ...this.headers,
+        ...authHeaders,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ hashes }),
@@ -380,6 +389,10 @@ export class PiStorageClient {
     if (!relativePathOrUrl) return '';
     let url = relativePathOrUrl;
 
+    if (!this.apiKey && url.startsWith('https://storage.mzecheru.com')) {
+      url = url.replace('https://storage.mzecheru.com', this.baseUrl);
+    }
+
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       if (!url.startsWith('/')) url = `/${url}`;
       if (!url.startsWith('/view') && !url.startsWith('/uploads')) {
@@ -390,6 +403,8 @@ export class PiStorageClient {
 
     if (this.apiKey && !url.includes('key=') && !url.includes('token=')) {
       url += (url.includes('?') ? '&' : '?') + `key=${encodeURIComponent(this.apiKey)}`;
+    } else if (!this.apiKey && url.includes('key=')) {
+      url = url.replace(/[?&]key=[^&]+/, '').replace(/\?$/, '');
     }
     return url;
   }
@@ -401,6 +416,10 @@ export class PiStorageClient {
     if (!relativePathOrUrl) return '';
     let url = relativePathOrUrl;
 
+    if (!this.apiKey && url.startsWith('https://storage.mzecheru.com')) {
+      url = url.replace('https://storage.mzecheru.com', this.baseUrl);
+    }
+
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       if (!url.startsWith('/')) url = `/${url}`;
       if (!url.startsWith('/thumb')) {
@@ -411,6 +430,8 @@ export class PiStorageClient {
 
     if (this.apiKey && !url.includes('key=') && !url.includes('token=')) {
       url += (url.includes('?') ? '&' : '?') + `key=${encodeURIComponent(this.apiKey)}`;
+    } else if (!this.apiKey && url.includes('key=')) {
+      url = url.replace(/[?&]key=[^&]+/, '').replace(/\?$/, '');
     }
     return url;
   }
@@ -596,9 +617,10 @@ export class PiStorageClient {
       while (attempt < maxRetries && !chunkSuccess) {
         attempt++;
         try {
+          const authHeaders = await this.getHeaders();
           const res = await fetch(`${this.baseUrl}/upload`, {
             method: 'POST',
-            headers: this.headers,
+            headers: authHeaders,
             body: formData,
           });
 
@@ -684,10 +706,11 @@ export class PiStorageClient {
    * @param expiresInSeconds default 604800 (7 days)
    */
   async getSignedUrl(relativePath: string, expiresInSeconds: number = 604800): Promise<SignedUrlResponse> {
+    const authHeaders = await this.getHeaders();
     const res = await fetch(`${this.baseUrl}/api/auth/sign-url`, {
       method: 'POST',
       headers: {
-        ...this.headers,
+        ...authHeaders,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -714,9 +737,10 @@ export class PiStorageClient {
    */
   async getDirectoryTree(folderPath: string = '/'): Promise<DirectoryTreeResponse> {
     const cleanPath = folderPath.startsWith('/') ? folderPath : `/${folderPath}`;
+    const authHeaders = await this.getHeaders();
     const res = await fetch(`${this.baseUrl}/api/tree?path=${encodeURIComponent(cleanPath)}`, {
       method: 'GET',
-      headers: this.headers,
+      headers: authHeaders,
     });
 
     if (!res.ok) {
@@ -740,9 +764,10 @@ export class PiStorageClient {
    * Searches media and folders by term.
    */
   async search(query: string) {
+    const authHeaders = await this.getHeaders();
     const res = await fetch(`${this.baseUrl}/api/search?q=${encodeURIComponent(query)}`, {
       method: 'GET',
-      headers: this.headers,
+      headers: authHeaders,
     });
 
     if (!res.ok) {
@@ -758,10 +783,11 @@ export class PiStorageClient {
    */
   async createDirectory(folderPath: string) {
     const cleanPath = folderPath.startsWith('/') ? folderPath : `/${folderPath}`;
+    const authHeaders = await this.getHeaders();
     const res = await fetch(`${this.baseUrl}/api/dir`, {
       method: 'POST',
       headers: {
-        ...this.headers,
+        ...authHeaders,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ path: cleanPath }),
@@ -780,10 +806,11 @@ export class PiStorageClient {
    */
   async deleteFile(filePath: string) {
     const cleanPath = filePath.startsWith('/') ? filePath : `/${filePath}`;
+    const authHeaders = await this.getHeaders();
     const res = await fetch(`${this.baseUrl}/api/file`, {
       method: 'DELETE',
       headers: {
-        ...this.headers,
+        ...authHeaders,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ path: cleanPath }),
@@ -802,10 +829,11 @@ export class PiStorageClient {
    */
   async deleteDirectory(folderPath: string) {
     const cleanPath = folderPath.startsWith('/') ? folderPath : `/${folderPath}`;
+    const authHeaders = await this.getHeaders();
     const res = await fetch(`${this.baseUrl}/api/dir`, {
       method: 'DELETE',
       headers: {
-        ...this.headers,
+        ...authHeaders,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ path: cleanPath }),
@@ -830,10 +858,11 @@ export class PiStorageClient {
     const cleanPath = sourcePath.startsWith('/') ? sourcePath : `/${sourcePath}`;
     const cleanFolder = targetFolder.startsWith('/') ? targetFolder : `/${targetFolder}`;
 
+    const authHeaders = await this.getHeaders();
     const res = await fetch(`${this.baseUrl}/api/file/move`, {
       method: 'POST',
       headers: {
-        ...this.headers,
+        ...authHeaders,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -862,10 +891,11 @@ export class PiStorageClient {
     const cleanPaths = paths.map((p) => (p.startsWith('/') ? p : `/${p}`));
     const cleanFolder = targetFolder.startsWith('/') ? targetFolder : `/${targetFolder}`;
 
+    const authHeaders = await this.getHeaders();
     const res = await fetch(`${this.baseUrl}/api/file/move`, {
       method: 'POST',
       headers: {
-        ...this.headers,
+        ...authHeaders,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -887,9 +917,10 @@ export class PiStorageClient {
    * Helper Endpoint: List Existing Directories in PiStorage.
    */
   async listDirectories(): Promise<ListDirectoriesResponse> {
+    const authHeaders = await this.getHeaders();
     const res = await fetch(`${this.baseUrl}/api/dirs`, {
       method: 'GET',
-      headers: this.headers,
+      headers: authHeaders,
     });
 
     if (!res.ok) {

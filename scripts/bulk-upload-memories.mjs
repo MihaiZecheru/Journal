@@ -62,7 +62,6 @@ const CONFIG = {
   ).replace(/\/+$/, ''),
   PISTORAGE_API_KEY:
     process.env.PISTORAGE_API_KEY ||
-    process.env.REACT_APP_PISTORAGE_API_KEY ||
     '',
   DEFAULT_FOLDER:
     process.env.PISTORAGE_DEFAULT_FOLDER ||
