@@ -318,9 +318,16 @@ Question: ${question}`,
     }],
   });
 
-  const raw = response.candidates[0].content.parts[0].text.trim();
+  const raw = response.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '[]';
   const cleaned = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
-  return JSON.parse(cleaned);
+  try {
+    const parsed = JSON.parse(cleaned);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    const matches = cleaned.match(/"([^"]+)"/g);
+    if (matches) return matches.map(m => m.replace(/"/g, ''));
+    return [];
+  }
 }
 
 // ─── Endpoints ────────────────────────────────────────────────────────────────
@@ -351,7 +358,7 @@ app.post('/api/generate-summary', requireAuth, async (req, res) => {
     return res.status(200).json({ summary, error: null });
   } catch (err) {
     console.error('Error in /api/generate-summary:', err.message);
-    return res.status(500).json({ error: 'Failed to generate summary', summary: null });
+    return res.status(500).json({ error: err.message || 'Failed to generate summary', summary: null });
   }
 });
 
@@ -381,7 +388,7 @@ app.post('/api/ai-search', requireAuth, async (req, res) => {
     return res.status(200).json({ answer, error: null });
   } catch (err) {
     console.error('Error in /api/ai-search:', err.message);
-    return res.status(500).json({ error: 'Failed to perform AI search', answer: null });
+    return res.status(500).json({ error: err.message || 'Failed to perform AI search', answer: null });
   }
 });
 
@@ -401,7 +408,7 @@ app.post('/api/generate-search-keywords', requireAuth, async (req, res) => {
     return res.status(200).json({ keywords, error: null });
   } catch (err) {
     console.error('Error in /api/generate-search-keywords:', err.message);
-    return res.status(500).json({ error: 'Failed to generate keywords', keywords: null });
+    return res.status(500).json({ error: err.message || 'Failed to generate keywords', keywords: null });
   }
 });
 
