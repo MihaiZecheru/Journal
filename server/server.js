@@ -26,7 +26,9 @@ const SUPABASE_API_KEY = (
   process.env.REACT_APP_SUPABASE_ANON_KEY ||
   process.env.SUPABASE_ANON_KEY
 );
-const SUMMARY_MODEL = process.env.GEMINI_SUMMARY_MODEL || 'gemini-3.5-flash';
+
+// MODEL SELECTION
+const SUMMARY_MODEL = 'gemini-3.8-flash';
 const SEARCH_MODEL = 'gemini-3.5-flash';
 
 const PISTORAGE_URL = (process.env.PISTORAGE_URL || 'https://storage.mzecheru.com').replace(/\/+$/, '');
